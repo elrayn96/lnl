@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/css/videochat.css">
+    <title>Videochat — Link&Live</title>
+    <!-- 🔥 CRITICAL: Add SockJS and STOMP -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+</head>
+
+<body>
+    <div class="ad-banner">Publicidade — Banner permanente durante videochat</div>
+    <div class="video-container">
+        <div class="stranger-video">
+            <!-- Vídeo do outro usuário aparecerá aqui -->
+        </div>
+        <div class="my-video">
+            <!-- Seu vídeo (PIP) -->
+        </div>
+        <button class="report-btn" title="Reportar usuário">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 4H20L12 12L4 4Z" stroke="#f44336" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M12 12V20" stroke="#f44336" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+        </button>
+        <div class="controls">
+            <button class="btn btn-end" id="end-btn">SAIR</button>
+            <button class="btn btn-next" id="next-btn">NEXT</button>
+        </div>
+    </div>
+
+    <div class="ad-dialog" id="ad-dialog" style="display: none;">
+        <div class="ad-dialog-content">
+            <h3>Publicidade</h3>
+            <p>Por favor, aguarde <span id="ad-timer">3</span> segundos.</p>
+        </div>
+    </div>
+
+    <!-- 🔥 Load your JS AFTER SockJS/STOMP -->
+    <script src="/js/videochat.js"></script>
+</body>
+
+</html>

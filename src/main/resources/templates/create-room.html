@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/css/create-room.css">
+    <title>Criar Sala Q&A — Link&Live</title>
+</head>
+
+<body>
+    <a href="/" class="back-link">← Voltar</a>
+    <div class="container">
+        <h1>Criar Sala Q&A</h1>
+        <p class="subtitle">Configure sua sala de perguntas e respostas</p>
+
+        <div class="intrusive-ad">ANÚNCIO — Área visível para avaliação</div>
+
+        <form method="POST" action="/room/create">
+            <div th:if="${error}" class="error" th:text="${error}"></div>
+            <div class="field">
+                <label>Título da Sala</label>
+                <input type="text" name="title" class="input" placeholder="Ex: Pergunte-me qualquer coisa..."
+                    required />
+            </div>
+            <div class="field">
+                <label>Duração</label>
+                <div class="toggle-group">
+                    <button type="button" class="toggle-btn active" onclick="setDuration('15min')">15 min</button>
+                    <button type="button" class="toggle-btn" onclick="setDuration('1h')">1 hora</button>
+                    <button type="button" class="toggle-btn" onclick="setDuration('24h')">24 horas</button>
+                </div>
+                <input type="hidden" name="duration" id="duration-input" value="15min" />
+            </div>
+            <div class="field">
+                <label>Modo</label>
+                <div class="toggle-group">
+                    <button type="button" class="toggle-btn active" onclick="setMode('text')">Somente Texto</button>
+                    <button type="button" class="toggle-btn" onclick="setMode('audio')">Texto + Áudio</button>
+                </div>
+                <input type="hidden" name="mode" id="mode-input" value="text" />
+            </div>
+            <button type="submit" class="btn">Criar Sala</button>
+        </form>
+    </div>
+    <script src="/js/create-room.js"></script>
+</body>
+
+</html>
