@@ -1,30 +1,207 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="/css/videochat.css">
     <title>Videochat — Link&Live</title>
-    <!-- 🔥 CRITICAL: Add SockJS and STOMP -->
-    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <!-- Carrega o SDK do ZegoCloud -->
+    <script src="https://cdn.jsdelivr.net/npm/zego-express-engine-web@3.0.0/dist/zego-express-engine-web.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #000000;
+            --text-primary: #E0E0E0;
+            --color-primary: #00BCD4;
+            --radius-lg: 24px;
+            --font-sans: 'Google Sans', 'Roboto', system-ui, sans-serif;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+        .ad-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(30, 30, 30, 0.92);
+            padding: 0.5rem;
+            text-align: center;
+            font-size: 0.875rem;
+            color: #aaa;
+            border-bottom: 1px solid #333;
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .video-container {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding-top: 3rem;
+        }
+        .stranger-video {
+            width: 90%;
+            max-width: 800px;
+            height: 70vh;
+            background: #1a1a1a;
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 1.25rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .my-video {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            width: 140px;
+            height: 105px;
+            background: #222;
+            border: 2px solid rgba(0, 188, 212, 0.5);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            color: #777;
+            z-index: 10;
+        }
+        .controls {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 1.25rem;
+            z-index: 10;
+        }
+        .btn {
+            padding: 0.8rem 1.8rem;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .btn-end {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+        }
+        .btn-end:hover {
+            background: #444;
+            transform: scale(1.03);
+        }
+        .btn-next {
+            background: var(--color-primary);
+            color: white;
+            padding: 0.9rem 2.5rem;
+        }
+        .btn-next:hover {
+            background: #00acc1;
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(0, 188, 212, 0.4);
+        }
+        /* Anúncio intersticial simulado */
+        .ad-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            color: white;
+            font-size: 1.25rem;
+        }
+        .ad-dialog-content {
+            background: #1e1e1e;
+            padding: 2rem;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 400px;
+            border: 2px dashed var(--color-primary);
+        }
+        .ad-dialog h3 {
+            color: var(--color-primary);
+            margin-bottom: 1rem;
+        }
+        .ad-timer {
+            font-size: 2rem;
+            margin-top: 0.5rem;
+            color: var(--color-primary);
+        }
+        .report-btn {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            width: 48px;
+            height: 48px;
+            background: rgba(244, 67, 54, 0.15);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .report-btn:hover {
+            background: rgba(244, 67, 54, 0.3);
+        }
+        @media (max-width: 600px) {
+            .my-video {
+                width: 110px;
+                height: 82px;
+                top: 1rem;
+                right: 1rem;
+            }
+            .controls {
+                gap: 0.8rem;
+                bottom: 1.5rem;
+            }
+            .btn {
+                padding: 0.7rem 1.4rem;
+                font-size: 1rem;
+            }
+        }
+    </style>
 </head>
-
 <body>
     <div class="ad-banner">Publicidade — Banner permanente durante videochat</div>
     <div class="video-container">
-        <div class="stranger-video">
+        <div class="stranger-video" id="remoteVideoContainer">
             <!-- Vídeo do outro usuário aparecerá aqui -->
         </div>
-        <div class="my-video">
+        <div class="my-video" id="localVideoContainer">
             <!-- Seu vídeo (PIP) -->
         </div>
         <button class="report-btn" title="Reportar usuário">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M4 4H20L12 12L4 4Z" stroke="#f44336" stroke-width="2" stroke-linecap="round"
                     stroke-linejoin="round" />
-                <path d="M12 12V20" stroke="#f44336" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M12 12V20" stroke="#f44336" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" />
             </svg>
         </button>
         <div class="controls">
@@ -33,6 +210,7 @@
         </div>
     </div>
 
+    <!-- Simulated ad dialog -->
     <div class="ad-dialog" id="ad-dialog" style="display: none;">
         <div class="ad-dialog-content">
             <h3>Publicidade</h3>
@@ -40,8 +218,112 @@
         </div>
     </div>
 
-    <!-- 🔥 Load your JS AFTER SockJS/STOMP -->
-    <script src="/js/videochat.js"></script>
-</body>
+    <script>
+        // Configuração ZegoCloud
+        const ZEGO_APP_ID = 472956482; // AppID fornecido
+        const ZEGO_APP_SIGN = "446c01e7a95293282f1129da4abf1287"; // AppSign fornecido
 
+        let zegoClient;
+        let localStream;
+        let currentRoomID = 'omegle_' + Date.now();
+        let isConnecting = false;
+
+        // Função para mostrar spinner
+        function showLoading(container, text = '') {
+            container.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#777;font-size:1rem;">
+                    <div style="width:32px;height:32px;border:3px solid rgba(255,255,255,0.3);border-top:3px solid #00BCD4;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:8px;"></div>
+                    <span>${text}</span>
+                </div>
+                <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+            `;
+        }
+
+        async function init() {
+            try {
+                zegoClient = new ZegoExpressEngine(ZEGO_APP_ID, ZEGO_APP_SIGN);
+
+                // Evento de stream remoto
+                zegoClient.on('roomStreamUpdate', (roomID, updateType, streamList) => {
+                    if (updateType === 'ADD') {
+                        streamList.forEach(stream => {
+                            if (stream.streamID !== localStream?.streamID) {
+                                const remoteVideo = document.createElement('video');
+                                remoteVideo.autoplay = true;
+                                remoteVideo.playsInline = true;
+                                remoteVideo.style.width = '100%';
+                                remoteVideo.style.height = '100%';
+                                remoteVideo.style.objectFit = 'cover';
+                                document.getElementById('remoteVideoContainer').innerHTML = '';
+                                document.getElementById('remoteVideoContainer').appendChild(remoteVideo);
+                                zegoClient.startPlayingStream(stream.streamID, remoteVideo);
+                            }
+                        });
+                    }
+                });
+
+                // Inicia a chamada
+                startCall();
+
+            } catch (err) {
+                console.error('Erro ao inicializar ZegoCloud:', err);
+                showLoading(document.getElementById('stranger-video'), 'Erro de conexão');
+            }
+        }
+
+        async function startCall() {
+            showLoading(document.getElementById('stranger-video'), 'Conectando...');
+            const userID = 'user_' + Math.random().toString(36).substr(2, 9);
+            try {
+                await zegoClient.loginRoom(currentRoomID, userID);
+                localStream = await zegoClient.createStream({ camera: { audio: true, video: true } });
+                const localVideo = document.createElement('video');
+                localVideo.srcObject = localStream;
+                localVideo.autoplay = true;
+                localVideo.muted = true;
+                localVideo.playsInline = true;
+                localVideo.style.width = '100%';
+                localVideo.style.height = '100%';
+                localVideo.style.objectFit = 'cover';
+                document.getElementById('localVideoContainer').innerHTML = '';
+                document.getElementById('localVideoContainer').appendChild(localVideo);
+                await zegoClient.startPublishingStream(userID, localStream);
+                showLoading(document.getElementById('stranger-video'), 'Aguardando parceiro...');
+            } catch (err) {
+                console.error('Erro ao iniciar chamada:', err);
+                showLoading(document.getElementById('stranger-video'), 'Erro ao conectar');
+            }
+        }
+
+        async function nextCall() {
+            if (localStream) {
+                await zegoClient.stopPublishingStream(localStream.streamID);
+                localStream = null;
+            }
+            await zegoClient.logoutRoom(currentRoomID);
+            const adDialog = document.getElementById('ad-dialog');
+            const adTimer = document.getElementById('ad-timer');
+            let count = 3;
+            adDialog.style.display = 'flex';
+            const interval = setInterval(() => {
+                count--;
+                adTimer.textContent = count;
+                if (count <= 0) {
+                    clearInterval(interval);
+                    adDialog.style.display = 'none';
+                    currentRoomID = 'omegle_' + Date.now();
+                    startCall();
+                }
+            }, 1000);
+        }
+
+        document.getElementById('next-btn').addEventListener('click', nextCall);
+        document.getElementById('end-btn').addEventListener('click', () => {
+            window.location.href = '/';
+        });
+
+        // Inicia tudo
+        init();
+    </script>
+</body>
 </html>
