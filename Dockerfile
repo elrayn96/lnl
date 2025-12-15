@@ -1,16 +1,19 @@
 FROM eclipse-temurin:17-jdk-alpine
 
-# Diretório de trabalho dentro do contêiner
+# Diretório de trabalho
 WORKDIR /app
 
-# Copia tudo para o contêiner
+# Copia todo o código-fonte
 COPY . .
 
-# Constrói o projeto com Maven Wrapper
+# Dá permissão de execução ao Maven Wrapper
+RUN chmod +x ./mvnw
+
+# Constrói o projeto (ignora testes para build mais rápido)
 RUN ./mvnw clean package -DskipTests
 
-# Expõe a porta
+# Expõe a porta da aplicação
 EXPOSE 8080
 
-# Comando de execução
+# Executa o JAR gerado
 CMD ["java", "-jar", "target/Link&Live-0.0.1-SNAPSHOT.jar"]
