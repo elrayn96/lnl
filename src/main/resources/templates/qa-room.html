@@ -6,12 +6,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title th:text="${room.title + ' — Link&Live'}">Sala Q&A — Link&Live</title>
   <link rel="stylesheet" href="/css/qa-room.css">
+
+  <!-- <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script> -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script> -->
   <script src="/js/sockjs.min.js"></script>
   <script src="/js/stomp.min.js"></script>
-  <!-- AdMob Web -->
-  <script async
-    src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2409318039378512~6163972062"
-    crossorigin="anonymous"></script>
+
 </head>
 
 <body>
@@ -23,6 +23,7 @@
     </div>
     <button class="share-btn" id="share-btn">🔗</button>
   </div>
+
   <!-- Preview de Resposta -->
   <div class="reply-preview" id="reply-preview" style="display: none;">
     <span class="reply-to" id="reply-to-name">...</span>
@@ -30,9 +31,9 @@
     <div class="reply-snippet" id="reply-snippet">...</div>
     <button class="reply-cancel" id="reply-cancel">×</button>
   </div>
+
   <div class="chat-container">
     <div class="messages" id="messages">
-      <!-- Mensagens reais (seu código Thymeleaf) -->
       <div th:each="msg : ${allMessages}" th:data-id="${msg.id}" th:data-author-uuid="${msg.author.uuid}"
         th:data-text="${msg.text}" th:data-timestamp="${#temporals.format(msg.createdAt, 'HH:mm')}"
         th:data-author-name="${msg.author.username}"
@@ -49,6 +50,7 @@
         </div>
       </div>
     </div>
+
     <form id="messageForm" class="input-area">
       <input type="hidden" id="replyToMessageId" />
       <input type="text" id="messageInput" class="message-input" placeholder="Digite sua pergunta ou resposta..."
@@ -56,14 +58,9 @@
       <button type="submit" class="send-btn">➤</button>
     </form>
   </div>
-  <!-- Banner AdMob fixo no rodapé -->
-  <div class="ad-banner">
-    <ins class="adsbygoogle" style="display:block" data-ad-client="ca-app-pub-2409318039378512~6163972062"
-      data-ad-slot="1110971847" data-ad-format="auto" data-full-width-responsive="true"></ins>
-    <script>
-      (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
-  </div>
+
+  <div class="ad-banner">Publicidade</div>
+
   <!-- Action Sheet Mobile -->
   <div id="action-sheet" class="action-sheet" style="display: none;">
     <div class="action-sheet-content">
@@ -71,7 +68,9 @@
       <button id="action-cancel" class="action-btn cancel">Cancelar</button>
     </div>
   </div>
+
   <script src="/js/qa-room.js"></script>
+
 </body>
 
 </html>
