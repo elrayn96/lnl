@@ -24,16 +24,21 @@ public class AdImpression {
     private String adProvider;
 
     @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
-    private Instant  impressionTime;
-        
+    private Instant impressionTime;
+
     @Column(nullable = false)
     private boolean clicked;
 
     @Column(nullable = false)
     private UUID sessioUUID;
 
-}
+    enum AdType {
+        BANNER, VIDEO_INTER
+    }
 
-enum AdType {
-    BANNER, VIDEO_INTER
+
+    public void setAdType(String adType) {
+        this.adType = AdType.valueOf(adType.toUpperCase());
+    }
+
 }

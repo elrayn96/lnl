@@ -1,3 +1,4 @@
+// src/main/resources/static/js/videochat.js
 const strangerVideo = document.querySelector('.stranger-video');
 const myVideo = document.querySelector('.my-video');
 const nextBtn = document.getElementById('next-btn');
@@ -11,18 +12,39 @@ let stompClient = null;
 let mySessionId = null;
 let peerId = null;
 let isInitiator = false;
-
-// Buffer para candidatos ICE (resolves Problema 2)
 let iceCandidatesBuffer = [];
 let remoteDescriptionSet = false;
-
-// Evita múltiplas conexões (resolves Problema 1 e 4)
 let isAlreadyPaired = false;
+
+// ============== UTILS ==============
+function isMobile() {
+    return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
 
 function showLoading(el, msg) {
     el.innerHTML = `<div style="color:#777;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">${msg}</div>`;
 }
 
+function logAdImpression(adType, adProvider, clicked = false) {
+    // Obter sessionUUID do backend via endpoint seguro
+    fetch('/room/api/user/init-video')
+        .then(res => res.json())
+        .then(data => {
+            fetch('/api/ad/impression', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    adType: adType,
+                    adProvider: adProvider,
+                    clicked: clicked,
+                    sessionUUID: data.userId
+                })
+            }).catch(console.warn);
+        })
+        .catch(console.warn);
+}
+
+// ============== CAMERA ==============
 async function startCamera() {
     if (localStream) return;
     try {
@@ -44,29 +66,24 @@ async function startCamera() {
     }
 }
 
+// ============== SIGNALING ==============
 function connectSignaling() {
     showLoading(strangerVideo, 'Procurando usuário...');
     const socket = new SockJS('/ws');
     stompClient = Stomp.over(socket);
     stompClient.debug = null;
-
     stompClient.connect({}, () => {
-        stompClient.subscribe('/topic/welcome-ack', (msg) => {
-            // ✅ Só processa se ainda não tem ID
+        stompClient.subscribe('/user/queue/welcome', (msg) => {
             if (mySessionId) return;
             mySessionId = msg.body;
-            console.log("Meu ID:", mySessionId);
-
             stompClient.subscribe(`/topic/pair/${mySessionId}`, (p) => {
                 if (isAlreadyPaired) return;
                 isAlreadyPaired = true;
-
                 const data = JSON.parse(p.body);
                 peerId = data.peer;
                 isInitiator = data.initiator;
                 startWebRTC();
             });
-
             stompClient.subscribe(`/topic/signal/${mySessionId}`, (s) => {
                 const signal = JSON.parse(s.body);
                 if (signal.type === "peerLeft") {
@@ -75,17 +92,14 @@ function connectSignaling() {
                     handleSignal(signal);
                 }
             });
-
             stompClient.send("/app/video.join", {}, "");
         });
-
-        stompClient.send("/app/get-session-id", {}, "");
     });
 }
 
+// ============== WEBCAM ==============
 function startWebRTC() {
     showLoading(strangerVideo, isInitiator ? 'Conectando...' : 'Aguardando...');
-
     peerConnection = new RTCPeerConnection({
         iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
@@ -99,7 +113,6 @@ function startWebRTC() {
 
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    // ✅ Anexa ao DOM ANTES de play() (resolves Problema 3)
     peerConnection.ontrack = (e) => {
         const v = document.createElement('video');
         v.srcObject = e.streams[0];
@@ -108,10 +121,8 @@ function startWebRTC() {
         v.style.width = '100%';
         v.style.height = '100%';
         v.style.objectFit = 'cover';
-
-        strangerVideo.innerHTML = ''; // Limpa primeiro
-        strangerVideo.appendChild(v); // Depois anexa
-
+        strangerVideo.innerHTML = '';
+        strangerVideo.appendChild(v);
         v.play().catch(err => console.warn("Autoplay bloqueado:", err));
     };
 
@@ -136,10 +147,8 @@ function startWebRTC() {
     }
 }
 
-// ✅ Buffer de ICE (resolves Problema 2)
 function handleSignal(signal) {
     if (!peerConnection) return;
-
     if (signal.type === "offer") {
         peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data))
             .then(() => {
@@ -155,11 +164,7 @@ function handleSignal(signal) {
                 }));
             });
     } else if (signal.type === "answer") {
-        // ✅ Verifica estado antes de setar (resolves Problema 4)
-        if (peerConnection.signalingState === 'stable') {
-            console.warn("Ignorando answer duplicado");
-            return;
-        }
+        if (peerConnection.signalingState === 'stable') return;
         peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data))
             .then(() => {
                 remoteDescriptionSet = true;
@@ -176,7 +181,7 @@ function handleSignal(signal) {
 
 function processBufferedIceCandidates() {
     iceCandidatesBuffer.forEach(candidate => {
-        peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+        peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => { });
     });
     iceCandidatesBuffer = [];
 }
@@ -187,11 +192,8 @@ function handlePeerLeft() {
 }
 
 function hangUp() {
-    if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-    }
-    // ✅ Reseta tudo
+    if (peerConnection) peerConnection.close();
+    peerConnection = null;
     mySessionId = null;
     peerId = null;
     isInitiator = false;
@@ -201,13 +203,15 @@ function hangUp() {
     strangerVideo.innerHTML = '';
 }
 
+// ============== EVENTOS ==============
 nextBtn.onclick = () => {
     hangUp();
     if (stompClient) {
-        stompClient.disconnect(); // ✅ Fecha conexão antiga
+        stompClient.disconnect();
         stompClient = null;
     }
-
+    const adProvider = isMobile() ? "Google_AdMob" : "Google_Adsense";
+    logAdImpression("VIDEO_INTER", adProvider, false);
     adDialog.style.display = 'flex';
     let c = 3;
     adTimer.textContent = c;
@@ -217,7 +221,7 @@ nextBtn.onclick = () => {
         if (c <= 0) {
             clearInterval(iv);
             adDialog.style.display = 'none';
-            connectSignaling(); // ✅ Nova conexão limpa
+            connectSignaling();
         }
     }, 1000);
 };
