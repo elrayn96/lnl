@@ -8,6 +8,10 @@
     <link rel="stylesheet" href="/css/videochat.css">
     <script src="/js/sockjs.min.js"></script>
     <script src="/js/stomp.min.js"></script>
+    <!-- AdMob Web -->
+    <script async
+        src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-app-pub-2409318039378512~6163972062"
+        crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -16,7 +20,7 @@
         <div class="stranger-video">
             <!-- Vídeo do outro usuário -->
         </div>
-        <div class="my-video">  
+        <div class="my-video">
             <!-- Seu vídeo (PIP) -->
         </div>
         <button class="report-btn" title="Reportar usuário">
@@ -30,9 +34,16 @@
             <button class="btn btn-next" id="next-btn">NEXT</button>
         </div>
     </div>
+    <!-- Anúncio intersticial de 3s -->
     <div class="ad-dialog" id="ad-dialog" style="display: none;">
         <div class="ad-dialog-content">
-            <h3>Publicidade</h3>
+            <h3>Anúncio Patrocinado</h3>
+            <!-- AdMob Interstitial -->
+            <ins class="adsbygoogle" style="display:block" data-ad-client="ca-app-pub-2409318039378512~6163972062"
+                data-ad-slot="3185814305" data-ad-format="rectangle" data-full-width-responsive="false"></ins>
+            <script>
+                (adsbygoogle = window.adsbygoogle || []).push({});
+            </script>
             <p>Aguarde <span id="ad-timer">3</span> segundos.</p>
         </div>
     </div>
