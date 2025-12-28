@@ -1,101 +1,95 @@
 package com.elrayn.LnL.controller;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.Message;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import org.springframework.messaging.Message;
+import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+@Slf4j
 @Controller
 @RequiredArgsConstructor
 public class SignalingController {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private static final ConcurrentLinkedQueue<String> waiting = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentHashMap<String, String> pairs = new ConcurrentHashMap<>();
 
-    private static final ConcurrentLinkedQueue<String> waitingSessions = new ConcurrentLinkedQueue<>();
-    private static final ConcurrentHashMap<String, String> peers = new ConcurrentHashMap<>();
-
-    @MessageMapping("/video.join")
-    public void join(Message<?> message) {
-        SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.wrap(message);
-        String sessionId = accessor.getSessionId();
-        if (sessionId == null || peers.containsKey(sessionId))
-            return;
-
-        peers.put(sessionId, "waiting");
-        waitingSessions.add(sessionId);
-        tryMatch();
+    // ✅ Este método é ESSENCIAL
+    @EventListener
+    public void onConnect(SessionConnectedEvent event) {
+        String sessionId = event.getMessage().getHeaders().get("simpSessionId", String.class);
+        if (sessionId != null) {
+            log.info("✅ Usuário conectado: {}", sessionId);
+            // ✅ Envie para um tópico EXPLÍCITO com o sessionId
+            messagingTemplate.convertAndSend("/topic/welcome/" + sessionId, sessionId);
+        }
     }
 
-    private void tryMatch() {
-        while (waitingSessions.size() >= 2) {
-            String a = waitingSessions.poll();
-            String b = waitingSessions.poll();
-
-            if (a == null || b == null || a.equals(b)) {
-                if (a != null)
-                    waitingSessions.add(a);
-                continue;
-            }
-
-            if (!"waiting".equals(peers.get(a)) || !"waiting".equals(peers.get(b)))
-                continue;
-
-            peers.put(a, b);
-            peers.put(b, a);
-
-            Map<String, Object> forA = new HashMap<>();
-            forA.put("peer", b);
-            forA.put("initiator", true);
-
-            Map<String, Object> forB = new HashMap<>();
-            forB.put("peer", a);
-            forB.put("initiator", false);
-
-            messagingTemplate.convertAndSend("/topic/match/" + a, forA);
-            messagingTemplate.convertAndSend("/topic/match/" + b, forB);
+    @MessageMapping("/video.join")
+    public void join(@Header("simpSessionId") String sessionId) {
+        if (sessionId == null || pairs.containsKey(sessionId) || waiting.contains(sessionId)) {
             return;
+        }
+        log.info("📥 Usuário entrou na fila: {}", sessionId);
+        waiting.add(sessionId);
+        tryPair();
+    }
+
+    private synchronized void tryPair() {
+        while (waiting.size() >= 2) {
+            String a = waiting.poll();
+            String b = waiting.poll();
+            if (a == null || b == null || a.equals(b))
+                continue;
+
+            pairs.put(a, b);
+            pairs.put(b, a);
+            log.info("🔗 Emparelhado: {} ↔ {}", a, b);
+
+            messagingTemplate.convertAndSend("/topic/pair/" + a, Map.of("peer", b, "initiator", true));
+            messagingTemplate.convertAndSend("/topic/pair/" + b, Map.of("peer", a, "initiator", false));
         }
     }
 
     @MessageMapping("/video.signal")
-    public void signal(Message<SignalMessage> message) {
-        SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.wrap(message);
-        String sender = accessor.getSessionId();
-        SignalMessage payload = message.getPayload();
-
-        if (sender == null || payload == null)
-            return;
-        String receiver = peers.get(sender);
-        if (receiver != null && !"waiting".equals(receiver)) {
+    public void signal(Map<String, Object> payload, @Header("simpSessionId") String sender) {
+        String receiver = pairs.get(sender);
+        if (receiver != null) {
             messagingTemplate.convertAndSend("/topic/signal/" + receiver, payload);
         }
     }
 
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
-        String id = event.getMessage().getHeaders().get("simpSessionId", String.class);
+        String id = event.getSessionId();
         if (id != null) {
-            String peer = peers.remove(id);
-            waitingSessions.remove(id);
-            if (peer != null && !"waiting".equals(peer)) {
-                peers.remove(peer);
-                messagingTemplate.convertAndSend("/topic/disconnect/" + peer, "peer-left");
+            waiting.remove(id);
+            String peer = pairs.remove(id);
+            if (peer != null) {
+                pairs.remove(peer);
+                messagingTemplate.convertAndSend("/topic/signal/" + peer, Map.of("type", "peerLeft"));
             }
+            log.info("👋 Usuário desconectado: {}", id);
         }
     }
 
-    public static class SignalMessage {
-        public String type;
-        public Object data;
+    @MessageMapping("/get-session-id")
+    public void getSessionId(Message<?> msg) {
+        String sessionId = SimpMessageHeaderAccessor.wrap(msg).getSessionId();
+        if (sessionId != null) {
+            messagingTemplate.convertAndSend("/topic/welcome-ack", sessionId);
+        }
     }
+
 }

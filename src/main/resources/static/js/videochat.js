@@ -6,89 +6,116 @@ const adDialog = document.getElementById('ad-dialog');
 const adTimer = document.getElementById('ad-timer');
 
 let localStream = null;
-let remoteStream = null;
 let peerConnection = null;
 let stompClient = null;
-let isConnecting = false;
+let mySessionId = null;
+let peerId = null;
+let isInitiator = false;
 
-function showLoading(container, text = '') {
-    container.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#777;font-size:1rem;">
-            <div style="width:32px;height:32px;border:3px solid rgba(255,255,255,0.3);border-top:3px solid #00BCD4;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:8px;"></div>
-            <span>${text}</span>
-        </div>
-        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
-    `;
+// Buffer para candidatos ICE (resolves Problema 2)
+let iceCandidatesBuffer = [];
+let remoteDescriptionSet = false;
+
+// Evita múltiplas conexões (resolves Problema 1 e 4)
+let isAlreadyPaired = false;
+
+function showLoading(el, msg) {
+    el.innerHTML = `<div style="color:#777;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">${msg}</div>`;
 }
 
-async function initCamera() {
+async function startCamera() {
+    if (localStream) return;
     try {
-        showLoading(myVideo, 'Iniciando câmera...');
+        showLoading(myVideo, 'Acessando câmera...');
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        const video = document.createElement('video');
-        video.srcObject = localStream;
-        video.autoplay = true;
-        video.muted = true;
-        video.playsInline = true;
-        video.style.width = '100%';
-        video.style.height = '100%';
-        video.style.objectFit = 'cover';
+        const v = document.createElement('video');
+        v.srcObject = localStream;
+        v.autoplay = true;
+        v.muted = true;
+        v.playsInline = true;
+        v.style.width = '100%';
+        v.style.height = '100%';
+        v.style.objectFit = 'cover';
         myVideo.innerHTML = '';
-        myVideo.appendChild(video);
-    } catch (err) {
+        myVideo.appendChild(v);
+    } catch (e) {
         myVideo.innerHTML = '<div style="color:#f44336;text-align:center;">Erro: câmera negada</div>';
-        console.error(err);
+        console.error("Erro na câmera:", e);
     }
 }
 
 function connectSignaling() {
-    if (isConnecting) return;
-    isConnecting = true;
     showLoading(strangerVideo, 'Procurando usuário...');
-
     const socket = new SockJS('/ws');
     stompClient = Stomp.over(socket);
+    stompClient.debug = null;
 
     stompClient.connect({}, () => {
-        stompClient.send("/app/video.join", {}, "");
-        stompClient.subscribe(`/topic/match/${stompClient.sessionId || ''}`, (msg) => {
-            const payload = JSON.parse(msg.body);
-            handleMatch(payload);
+        stompClient.subscribe('/topic/welcome-ack', (msg) => {
+            // ✅ Só processa se ainda não tem ID
+            if (mySessionId) return;
+            mySessionId = msg.body;
+            console.log("Meu ID:", mySessionId);
+
+            stompClient.subscribe(`/topic/pair/${mySessionId}`, (p) => {
+                if (isAlreadyPaired) return;
+                isAlreadyPaired = true;
+
+                const data = JSON.parse(p.body);
+                peerId = data.peer;
+                isInitiator = data.initiator;
+                startWebRTC();
+            });
+
+            stompClient.subscribe(`/topic/signal/${mySessionId}`, (s) => {
+                const signal = JSON.parse(s.body);
+                if (signal.type === "peerLeft") {
+                    handlePeerLeft();
+                } else {
+                    handleSignal(signal);
+                }
+            });
+
+            stompClient.send("/app/video.join", {}, "");
         });
-        stompClient.subscribe(`/topic/signal/${stompClient.sessionId || ''}`, (msg) => {
-            const signal = JSON.parse(msg.body);
-            handleSignal(signal);
-        });
-        stompClient.subscribe(`/topic/disconnect/${stompClient.sessionId || ''}`, () => {
-            showLoading(strangerVideo, 'Usuário saiu');
-            hangUp();
-        });
-    }, () => {
-        showLoading(strangerVideo, 'Erro de conexão');
-        isConnecting = false;
+
+        stompClient.send("/app/get-session-id", {}, "");
     });
 }
 
-// ✅ CORREÇÃO PRINCIPAL: tracks adicionadas ANTES de createOffer
-async function handleMatch({ peer, initiator }) {
-    showLoading(strangerVideo, initiator ? 'Conectando…' : 'Aguardando…');
+function startWebRTC() {
+    showLoading(strangerVideo, isInitiator ? 'Conectando...' : 'Aguardando...');
 
-    const pcConfig = {
+    peerConnection = new RTCPeerConnection({
         iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
-            { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-            { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }
+            {
+                urls: "turn:turn.ln.l.metered.live:80",
+                username: "lnl.metered.live",
+                credential: "PtjyCZeGO5cGSULwtXCw1qXx6-X-jch2pBf9oS-6L4k59vJi"
+            }
         ]
+    });
+
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    // ✅ Anexa ao DOM ANTES de play() (resolves Problema 3)
+    peerConnection.ontrack = (e) => {
+        const v = document.createElement('video');
+        v.srcObject = e.streams[0];
+        v.autoplay = true;
+        v.playsInline = true;
+        v.style.width = '100%';
+        v.style.height = '100%';
+        v.style.objectFit = 'cover';
+
+        strangerVideo.innerHTML = ''; // Limpa primeiro
+        strangerVideo.appendChild(v); // Depois anexa
+
+        v.play().catch(err => console.warn("Autoplay bloqueado:", err));
     };
 
-    peerConnection = new RTCPeerConnection(pcConfig);
-
-    // ✅ 1. Adicionar tracks LOCAIS PRIMEIRO
-    localStream.getTracks().forEach(track =>
-        peerConnection.addTrack(track, localStream));
-
-    // ✅ 2. Configurar handlers
-    peerConnection.onicecandidate = e => {
+    peerConnection.onicecandidate = (e) => {
         if (e.candidate) {
             stompClient.send("/app/video.signal", {}, JSON.stringify({
                 type: "candidate",
@@ -97,47 +124,66 @@ async function handleMatch({ peer, initiator }) {
         }
     };
 
-    peerConnection.ontrack = e => {
-        remoteStream = e.streams[0];
-        const video = document.createElement('video');
-        video.srcObject = remoteStream;
-        video.autoplay = true;
-        video.playsInline = true;
-        video.style.width = '100%';
-        video.style.height = '100%';
-        video.style.objectFit = 'cover';
-        strangerVideo.innerHTML = '';
-        strangerVideo.appendChild(video);
-        isConnecting = false;
-    };
-
-    // ✅ 3. Só agora criar offer/answer
-    if (initiator) {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        stompClient.send("/app/video.signal", {}, JSON.stringify({
-            type: "offer",
-            data: peerConnection.localDescription.toJSON()
-        }));
+    if (isInitiator) {
+        peerConnection.createOffer()
+            .then(offer => peerConnection.setLocalDescription(offer))
+            .then(() => {
+                stompClient.send("/app/video.signal", {}, JSON.stringify({
+                    type: "offer",
+                    data: peerConnection.localDescription.toJSON()
+                }));
+            });
     }
 }
 
-async function handleSignal(signal) {
+// ✅ Buffer de ICE (resolves Problema 2)
+function handleSignal(signal) {
     if (!peerConnection) return;
 
     if (signal.type === "offer") {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        stompClient.send("/app/video.signal", {}, JSON.stringify({
-            type: "answer",
-            data: peerConnection.localDescription.toJSON()
-        }));
+        peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data))
+            .then(() => {
+                remoteDescriptionSet = true;
+                processBufferedIceCandidates();
+                return peerConnection.createAnswer();
+            })
+            .then(answer => peerConnection.setLocalDescription(answer))
+            .then(() => {
+                stompClient.send("/app/video.signal", {}, JSON.stringify({
+                    type: "answer",
+                    data: peerConnection.localDescription.toJSON()
+                }));
+            });
     } else if (signal.type === "answer") {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data));
+        // ✅ Verifica estado antes de setar (resolves Problema 4)
+        if (peerConnection.signalingState === 'stable') {
+            console.warn("Ignorando answer duplicado");
+            return;
+        }
+        peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data))
+            .then(() => {
+                remoteDescriptionSet = true;
+                processBufferedIceCandidates();
+            });
     } else if (signal.type === "candidate") {
-        await peerConnection.addIceCandidate(signal.data);
+        if (remoteDescriptionSet) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(signal.data));
+        } else {
+            iceCandidatesBuffer.push(signal.data);
+        }
     }
+}
+
+function processBufferedIceCandidates() {
+    iceCandidatesBuffer.forEach(candidate => {
+        peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+    });
+    iceCandidatesBuffer = [];
+}
+
+function handlePeerLeft() {
+    hangUp();
+    showLoading(strangerVideo, 'O estranho saiu. Clique em NEXT.');
 }
 
 function hangUp() {
@@ -145,35 +191,44 @@ function hangUp() {
         peerConnection.close();
         peerConnection = null;
     }
-    if (localStream) localStream.getTracks().forEach(t => t.stop());
-    if (remoteStream) remoteStream.getTracks().forEach(t => t.stop());
-    isConnecting = false;
+    // ✅ Reseta tudo
+    mySessionId = null;
+    peerId = null;
+    isInitiator = false;
+    isAlreadyPaired = false;
+    iceCandidatesBuffer = [];
+    remoteDescriptionSet = false;
+    strangerVideo.innerHTML = '';
 }
 
-nextBtn.addEventListener('click', () => {
+nextBtn.onclick = () => {
     hangUp();
+    if (stompClient) {
+        stompClient.disconnect(); // ✅ Fecha conexão antiga
+        stompClient = null;
+    }
+
     adDialog.style.display = 'flex';
-    let count = 3;
-    adTimer.textContent = count;
+    let c = 3;
+    adTimer.textContent = c;
     const iv = setInterval(() => {
-        count--;
-        if (count <= 0) {
+        c--;
+        adTimer.textContent = c;
+        if (c <= 0) {
             clearInterval(iv);
             adDialog.style.display = 'none';
-            connectSignaling();
-        } else {
-            adTimer.textContent = count;
+            connectSignaling(); // ✅ Nova conexão limpa
         }
     }, 1000);
-});
+};
 
-endBtn.addEventListener('click', () => {
+endBtn.onclick = () => {
     hangUp();
     if (stompClient) stompClient.disconnect();
     window.location.href = '/';
-});
+};
 
 window.onload = async () => {
-    await initCamera();
-    if (localStream) connectSignaling();
+    await startCamera();
+    connectSignaling();
 };
