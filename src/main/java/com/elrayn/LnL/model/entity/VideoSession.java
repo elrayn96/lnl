@@ -17,7 +17,7 @@ public class VideoSession {
     private Long id;
 
     @Column(nullable = false, unique = true)
-    private UUID sessioUUID;
+    private UUID sessionUUID;
 
     @Column(nullable = false)
     private String peerAId;

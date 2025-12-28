@@ -2,6 +2,7 @@ package com.elrayn.LnL.model.service;
 
 import com.elrayn.LnL.model.entity.AdImpression;
 import com.elrayn.LnL.model.repository.AdImpressionRepository;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +21,7 @@ public class AdService {
         impression.setAdProvider(adProvider);
         impression.setImpressionTime(Instant.now());
         impression.setClicked(clicked);
-        impression.setSessioUUID(sessionUUID);
+        impression.setSessionUUID(sessionUUID == null ? UUID.randomUUID() : sessionUUID);
         adImpressionRepository.save(impression);
     }
 }

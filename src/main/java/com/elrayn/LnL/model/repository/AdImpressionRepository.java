@@ -8,5 +8,5 @@ import com.elrayn.LnL.model.entity.AdImpression;
 
 @Repository
 public interface AdImpressionRepository extends JpaRepository<AdImpression, Long> {
-    Optional<AdImpression> findBySessioUUID(UUID sessioUUID);
+    Optional<AdImpression> findBySessionUUID(UUID sessionUUID);
 }

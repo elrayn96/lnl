@@ -187,3 +187,20 @@ document.getElementById('action-reply')?.addEventListener('click', () => {
 document.getElementById('action-cancel')?.addEventListener('click', () => {
     document.getElementById('action-sheet').style.display = 'none';
 });
+
+
+
+// No final de qa-room.js, após todas as funções
+(async () => {
+    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    const provider = isMobile ? 'Google_AdMob' : 'Google_Adsense';
+    try {
+        await fetch('/api/ad/impression', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adType: 'BANNER', adProvider: provider, clicked: false })
+        });
+    } catch (e) {
+        console.warn("Falha ao registrar banner qa-room");
+    }
+})();

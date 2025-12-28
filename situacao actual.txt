@@ -1,0 +1,3518 @@
+package com.elrayn.LnL.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+@Configuration
+public class SystemConfig {
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper().registerModule(new JavaTimeModule());
+    }
+}
+
+
+
+
+package com.elrayn.LnL.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns("*")
+                .withSockJS();
+    }
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
+        registry.enableSimpleBroker("/topic", "/queue");
+        registry.setApplicationDestinationPrefixes("/app");
+        registry.setUserDestinationPrefix("/user");
+    }
+}
+
+
+
+
+package com.elrayn.LnL.controller;
+
+import com.elrayn.LnL.model.service.AdService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/ad")
+public class AdController {
+
+    @Autowired
+    private AdService adService;
+
+    @PostMapping("/impression")
+    public ResponseEntity<Void> logImpression(@RequestBody Map<String, Object> request) {
+        String adType = (String) request.get("adType");
+        String adProvider = (String) request.get("adProvider");
+        Boolean clicked = (Boolean) request.getOrDefault("clicked", false);
+        String sessionUUIDStr = (String) request.get("sessionUUID");
+
+        UUID sessionUUID = sessionUUIDStr != null ? UUID.fromString(sessionUUIDStr) : null;
+        adService.logImpression(adType, adProvider, clicked, sessionUUID);
+        return ResponseEntity.ok().build();
+    }
+}
+
+
+
+package com.elrayn.LnL.controller;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@Controller
+public class HomeController {   
+    @GetMapping("/")
+    public String home() {
+        return "home";
+    }
+}
+
+
+
+    package com.elrayn.LnL.controller;
+
+    import com.elrayn.LnL.model.entity.*;
+    import com.elrayn.LnL.model.service.AnswerService;
+    import com.elrayn.LnL.model.service.AppUserService;
+    import com.elrayn.LnL.model.service.AvatarService;
+    import com.elrayn.LnL.model.service.QuestionService;
+    import com.elrayn.LnL.model.service.RoomService;
+
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.stereotype.Controller;
+    import org.springframework.ui.Model;
+    import org.springframework.web.bind.annotation.*;
+
+    import jakarta.servlet.http.HttpSession;
+    import java.time.Instant;
+    import java.util.*;
+
+    @Controller
+    @RequestMapping("/room")
+    public class RoomController {
+
+        @Autowired
+        private RoomService roomService;
+
+        @Autowired
+        private AppUserService appUserService;
+
+        @Autowired
+        private AvatarService avatarService;
+
+        @Autowired
+        private QuestionService questionService;
+
+        @Autowired
+        private AnswerService answerService;
+
+        @GetMapping("/create")
+        public String createRoomForm() {
+            return "create-room";
+        }
+
+        @PostMapping("/create")
+        public String createRoom(
+                @RequestParam String title,
+                @RequestParam String duration,
+                @RequestParam String mode,
+                HttpSession session,
+                Model model) {
+
+            // Validações mínimas
+            if (title == null || title.trim().isEmpty()) {
+                model.addAttribute("error", "Título é obrigatório.");
+                return "create-room";
+            }
+
+            // Criar host (se não existir na sessão)
+            AppUser host = (AppUser) session.getAttribute("currentUser");
+            if (host == null) {
+                List<Avatar> avatars = avatarService.findAll();
+                Avatar randomAvatar = avatars.isEmpty() ? null : avatars.get(new Random().nextInt(avatars.size()));
+                host = new AppUser();
+                host.setUsername("Host_" + UUID.randomUUID().toString().substring(0, 6));
+                host.setUuid(UUID.randomUUID());
+                host.setCreatedAt(Instant.now());
+                host.setLastSeenAt(Instant.now());
+                host.setAvatar(randomAvatar);
+                host.setBanned(false);
+                host.setRole(AppUser.Role.APPUSER);
+                host.setAvatar(randomAvatar);
+                host = appUserService.save(host);
+
+                session.setAttribute("currentUser", host);
+            }
+
+            // Mapear duração
+            int durationMinutes = switch (duration) {
+                case "1h" -> 60;
+                case "24h" -> 24 * 60;
+                default -> 15;
+            };
+
+            // Mapear modo
+            Room.Mode roomMode = mode.equals("audio") ? Room.Mode.BOTH : Room.Mode.TEXT;
+
+            // Criar sala
+            Room room = new Room();
+            room.setUuid(UUID.randomUUID());
+            room.setOwner(host);
+            room.setTitle(title.trim());
+            room.setDescription("Sala de Q&A: " + title.trim());
+            room.setMode(roomMode);
+            room.setDurationMinutes(durationMinutes);
+            room.setCreatedAt(Instant.now());
+            room.setExpiresAt(Instant.now().plusSeconds(durationMinutes * 60L));
+            room.setPublic(true);
+            room.setArchieved(false);
+            room.setMaxVisitors(100);
+
+            room = roomService.save(room);
+
+            return "redirect:/room/" + room.getUuid();
+        }
+
+        // =============== TELA DE ENTRADA POR LINK ===============
+        @GetMapping("/join")
+        public String joinRoomForm() {
+            return "join-room";
+        }
+
+        @PostMapping("/join")
+        public String joinRoom(
+                @RequestParam String roomLink,
+                Model model) {
+
+            String cleanLink = roomLink.trim();
+
+            Optional<Room> room = roomService.findByUuid(UUID.fromString(cleanLink));
+            if (room.isPresent()) {
+                return "redirect:/room/" + cleanLink;
+            }
+
+            if (!cleanLink.matches("https?://[^/]+/room(/join)?/[a-f0-9\\-]+")) {
+                model.addAttribute("error", "Link inválido.");
+                return "join-room";
+            }
+
+            // Extrair UUID
+            String[] parts = cleanLink.split("/");
+            String uuidStr = parts[parts.length - 1];
+
+            try {
+                UUID uuid = UUID.fromString(uuidStr);
+                room = roomService.findByUuid(uuid);
+                if (room.isEmpty()) {
+                    model.addAttribute("error", "Sala não existe.");
+                    return "join-room";
+                }
+                return "redirect:/room/" + uuid;
+            } catch (IllegalArgumentException e) {
+                model.addAttribute("error", "UUID inválido.");
+                return "join-room";
+            }
+        }
+
+        private String generateRandomName() {
+            String[] adjectives = { "Blue", "Cosmic", "Silent", "Mystic", "Wild", "Golden", "Shadow", "Neon" };
+            String[] nouns = { "Tiger", "Owl", "Wolf", "Phoenix", "Dragon", "Fox", "Eagle", "Shark" };
+            Random r = new Random();
+            return adjectives[r.nextInt(adjectives.length)] + "_" + nouns[r.nextInt(nouns.length)]
+                    + UUID.randomUUID().toString().substring(0, 5);
+        }
+
+        @PostMapping("/{uuid}/question")
+        public String addQuestion(@PathVariable UUID uuid, @RequestParam String text, HttpSession session) {
+
+            Optional<Room> roomOpt = roomService.findByUuid(uuid);
+            if (roomOpt.isEmpty()) {
+                return "redirect:/room/join?error=Sala não encontrada";
+            }
+
+            Room room = roomOpt.get();
+            if (Instant.now().isAfter(room.getExpiresAt())) {
+                return "redirect:/room/join?error=Sala expirada";
+            }
+
+            AppUser visitor = (AppUser) session.getAttribute("visitorUser");
+            if (visitor == null) {
+                // Redirecionar para garantir que tenha visitante
+                return "redirect:/room/" + uuid;
+            }
+
+            Question question = new Question();
+            question.setRoom(room);
+            question.setText(text.trim());
+            question.setCreatedAt(Instant.now());
+            question.setAuthor(visitor);
+            question.setUpvotes(0);
+            question.setPrivate(false);
+            question.setStatus(Question.Status.PENDING); // ou PUBLISHED se quiser mostrar imediatamente
+
+            question = questionService.save(question);
+
+            return "redirect:/room/" + uuid;
+        }
+
+        @GetMapping("/{uuid}")
+        public String viewRoom(@PathVariable UUID uuid, HttpSession session, Model model) {
+            Optional<Room> roomOpt = roomService.findByUuid(uuid);
+            if (roomOpt.isEmpty()) {
+                model.addAttribute("error", "Sala não encontrada.");
+                return "error";
+            }
+            Room room = roomOpt.get();
+            if (Instant.now().isAfter(room.getExpiresAt())) {
+                model.addAttribute("error", "Sala expirada.");
+                return "error";
+            }
+            AppUser visitor = (AppUser) session.getAttribute("visitorUser");
+            if (visitor == null) {
+                List<Avatar> avatars = avatarService.findAll();
+                Avatar randomAvatar = avatars.isEmpty() ? null : avatars.get(new Random().nextInt(avatars.size()));
+                visitor = new AppUser();
+                visitor.setUsername(generateRandomName());
+                visitor.setUuid(UUID.randomUUID());
+                visitor.setCreatedAt(Instant.now());
+                visitor.setLastSeenAt(Instant.now());
+                visitor.setAvatar(randomAvatar);
+                visitor.setBanned(false);
+                visitor.setRole(AppUser.Role.APPUSER);
+                visitor = appUserService.save(visitor);
+                session.setAttribute("visitorUser", visitor);
+            }
+
+            List<Question> questions = questionService.findByRoomWithAuthor(room);
+            List<Answer> answers = answerService.findByRoom(room);
+            List<MessageWrapper> allMessages = new ArrayList<>();
+            for (Question q : questions)
+                allMessages.add(new MessageWrapper(q));
+            for (Answer a : answers)
+                allMessages.add(new MessageWrapper(a));
+            allMessages.sort(Comparator.comparing(MessageWrapper::getCreatedAt));
+
+            model.addAttribute("allMessages", allMessages);
+            model.addAttribute("room", room);
+            model.addAttribute("visitor", visitor);
+            model.addAttribute("visitorUuid", visitor.getUuid().toString()); // ← CORREÇÃO PRINCIPAL
+            model.addAttribute("roomOwnerUuid", room.getOwner().getUuid().toString());
+            return "qa-room";
+        }
+
+        @PostMapping("/{uuid}/message")
+        public String addMessage(@PathVariable UUID uuid,
+                @RequestParam String text,
+                @RequestParam(required = false) Long inReplyTo,
+                HttpSession session,
+                Model model) {
+            Optional<Room> roomOpt = roomService.findByUuid(uuid);
+            if (roomOpt.isEmpty()) {
+                return "redirect:/room/join?error=Sala não encontrada";
+            }
+            Room room = roomOpt.get();
+            if (Instant.now().isAfter(room.getExpiresAt())) {
+                return "redirect:/room/join?error=Sala expirada";
+            }
+            AppUser visitor = (AppUser) session.getAttribute("visitorUser");
+            if (visitor == null) {
+                return "redirect:/room/" + uuid;
+            }
+
+            if (inReplyTo != null) {
+                Optional<Question> questionOpt = questionService.findById(inReplyTo);
+                if (questionOpt.isPresent()) {
+                    Answer answer = new Answer();
+                    answer.setCreatedAt(Instant.now());
+                    answer.setQuestion(questionOpt.get());
+                    answer.setAuthor(visitor);
+                    answer.setText(text);
+                    answer.setPublished(true);
+                    answerService.save(answer);
+                }
+            } else {
+                Question question = new Question();
+                question.setAuthor(visitor);
+                question.setCreatedAt(Instant.now());
+                question.setPrivate(false);
+                question.setUpvotes(0);
+                question.setRoom(room);
+                question.setStatus(Question.Status.PUBLISHED);
+                question.setText(text.trim());
+                questionService.save(question);
+            }
+            return "redirect:/room/" + uuid;
+        }
+
+        public static class MessageWrapper {
+            private final Object source;
+            private final Long id;
+            private final String text;
+            private final AppUser author;
+            private final Instant createdAt;
+            private final Integer upvotes;
+
+            public MessageWrapper(Question q) {
+                this.source = q;
+                this.id = q.getId();
+                this.text = q.getText();
+                this.author = q.getAuthor();
+                this.createdAt = q.getCreatedAt();
+                this.upvotes = q.getUpvotes();
+            }
+
+            public MessageWrapper(Answer a) {
+                this.source = a;
+                this.id = a.getId();
+                this.text = a.getText();
+                this.author = a.getAuthor();
+                this.createdAt = a.getCreatedAt();
+                this.upvotes = 0; // ou carregar se tiver
+            }
+
+            // Getters obrigatórios para Thymeleaf
+            public Long getId() {
+                return id;
+            }
+
+            public String getText() {
+                return text;
+            }
+
+            public AppUser getAuthor() {
+                return author;
+            }
+
+            public Instant getCreatedAt() {
+                return createdAt;
+            }
+
+            public Integer getUpvotes() {
+                return upvotes;
+            }
+
+            // Opcional: tipo da mensagem
+            public boolean isAnswer() {
+                return source instanceof Answer;
+            }
+
+            public boolean isQuestion() {
+                return source instanceof Question;
+            }
+        }
+
+        // =============== NOVO ENDPOINT: Inicializar usuário visitante ===============
+        @GetMapping("/api/user/init")
+        @ResponseBody
+        public Map<String, Object> initVisitorUser(HttpSession session) {
+            AppUser visitor = (AppUser) session.getAttribute("visitorUser");
+            if (visitor == null) {
+                List<Avatar> avatars = avatarService.findAll();
+                Avatar randomAvatar = avatars.isEmpty() ? null : avatars.get(new Random().nextInt(avatars.size()));
+                visitor = new AppUser();
+                visitor.setUsername(generateRandomName());
+                visitor.setUuid(UUID.randomUUID());
+                visitor.setCreatedAt(Instant.now());
+                visitor.setLastSeenAt(Instant.now());
+                visitor.setAvatar(randomAvatar);
+                visitor.setBanned(false);
+                visitor.setRole(AppUser.Role.APPUSER);
+                visitor = appUserService.save(visitor);
+                session.setAttribute("visitorUser", visitor);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("uuid", visitor.getUuid().toString());
+            response.put("username", visitor.getUsername());
+            return response;
+        }
+
+        // =============== Inicializar usuário para videochat ===============
+        @GetMapping("/api/user/init-video")
+        @ResponseBody
+        public Map<String, String> initVideoUser(HttpSession session) {
+            AppUser visitor = (AppUser) session.getAttribute("visitorUser");
+            if (visitor == null) {
+                // Reutiliza sua lógica de generateRandomName()
+                String username = generateRandomName();
+                visitor = new AppUser();
+                visitor.setUsername(username);
+                visitor.setUuid(UUID.randomUUID());
+                visitor.setCreatedAt(Instant.now());
+                visitor.setLastSeenAt(Instant.now());
+                visitor.setBanned(false);
+                visitor.setRole(AppUser.Role.APPUSER);
+                visitor = appUserService.save(visitor);
+                session.setAttribute("visitorUser", visitor);
+            }
+
+            Map<String, String> response = new HashMap<>();
+            response.put("userId", visitor.getUuid().toString());
+            response.put("userName", visitor.getUsername());
+            return response;
+        }
+
+    }
+
+
+
+
+package com.elrayn.LnL.controller;
+
+import com.elrayn.LnL.model.entity.*;
+import com.elrayn.LnL.model.service.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
+
+@Controller
+@RequiredArgsConstructor
+public class RoomWebSocketController {
+
+    private final SimpMessagingTemplate messagingTemplate;
+    private final ObjectMapper objectMapper;
+    private final RoomService roomService;
+    private final AppUserService appUserService;
+    private final QuestionService questionService;
+    private final AnswerService answerService;
+
+    @MessageMapping("/room.message")
+    @Transactional
+    public void handleMessage(@Payload String payload) throws Exception {
+        ClientMessage clientMsg = objectMapper.readValue(payload, ClientMessage.class);
+
+        if (clientMsg.getRoomUuid() == null || clientMsg.getText() == null || clientMsg.getAuthorUuid() == null) {
+            return;
+        }
+
+        Optional<Room> roomOpt = roomService.findByUuid(clientMsg.getRoomUuid());
+        if (roomOpt.isEmpty() || Instant.now().isAfter(roomOpt.get().getExpiresAt())) {
+            return;
+        }
+        Room room = roomOpt.get();
+
+        AppUser author = appUserService.findByUuid(clientMsg.getAuthorUuid());
+        if (author == null) {
+            return;
+        }
+
+        String text = clientMsg.getText().trim();
+        if (text.isEmpty())
+            return;
+
+        ServerMessage serverMsg = new ServerMessage();
+        serverMsg.setRoomUuid(clientMsg.getRoomUuid());
+        serverMsg.setAuthorUuid(clientMsg.getAuthorUuid());
+        serverMsg.setAuthorName(author.getUsername());
+        serverMsg.setText(text);
+        serverMsg.setCreatedAt(Instant.now());
+
+        if (clientMsg.getInReplyTo() != null) {
+            Optional<Question> questionOpt = questionService.findById(clientMsg.getInReplyTo());
+            if (questionOpt.isPresent()) {
+                Answer answer = new Answer();
+                answer.setQuestion(questionOpt.get());
+                answer.setAuthor(author);
+                answer.setText(text);
+                answer.setCreatedAt(Instant.now());
+                answer.setPublished(true);
+                answer = answerService.save(answer);
+
+                serverMsg.setId(answer.getId());
+                serverMsg.setType("answer");
+                serverMsg.setInReplyTo(clientMsg.getInReplyTo());
+                serverMsg.setOriginalAuthorName(questionOpt.get().getAuthor().getUsername());
+                serverMsg.setOriginalMessageSnippet(questionOpt.get().getText());
+            } else {
+                return;
+            }
+        } else {
+            Question question = new Question();
+            question.setRoom(room);
+            question.setAuthor(author);
+            question.setText(text);
+            question.setCreatedAt(Instant.now());
+            question.setUpvotes(0);
+            question.setPrivate(false);
+            question.setStatus(Question.Status.PUBLISHED);
+            question = questionService.save(question);
+
+            serverMsg.setId(question.getId());
+            serverMsg.setType("question");
+        }
+
+        messagingTemplate.convertAndSend("/topic/room/" + clientMsg.getRoomUuid() + "/messages", serverMsg);
+    }
+
+    public static class ClientMessage {
+        private UUID roomUuid;
+        private UUID authorUuid;
+        private String text;
+        private Long inReplyTo;
+
+        public UUID getRoomUuid() {
+            return roomUuid;
+        }
+
+        public void setRoomUuid(UUID roomUuid) {
+            this.roomUuid = roomUuid;
+        }
+
+        public UUID getAuthorUuid() {
+            return authorUuid;
+        }
+
+        public void setAuthorUuid(UUID authorUuid) {
+            this.authorUuid = authorUuid;
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        public void setText(String text) {
+            this.text = text;
+        }
+
+        public Long getInReplyTo() {
+            return inReplyTo;
+        }
+
+        public void setInReplyTo(Long inReplyTo) {
+            this.inReplyTo = inReplyTo;
+        }
+    }
+
+    public static class ServerMessage {
+        private Long id;
+        private String type;
+        private UUID roomUuid;
+        private UUID authorUuid;
+        private String authorName;
+        private String text;
+        private Instant createdAt;
+        private Long inReplyTo;
+        private String originalAuthorName;
+        private String originalMessageSnippet;
+
+        // Getters e setters
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
+
+        public UUID getRoomUuid() {
+            return roomUuid;
+        }
+
+        public void setRoomUuid(UUID roomUuid) {
+            this.roomUuid = roomUuid;
+        }
+
+        public UUID getAuthorUuid() {
+            return authorUuid;
+        }
+
+        public void setAuthorUuid(UUID authorUuid) {
+            this.authorUuid = authorUuid;
+        }
+
+        public String getAuthorName() {
+            return authorName;
+        }
+
+        public void setAuthorName(String authorName) {
+            this.authorName = authorName;
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        public void setText(String text) {
+            this.text = text;
+        }
+
+        public Instant getCreatedAt() {
+            return createdAt;
+        }
+
+        public void setCreatedAt(Instant createdAt) {
+            this.createdAt = createdAt;
+        }
+
+        public Long getInReplyTo() {
+            return inReplyTo;
+        }
+
+        public void setInReplyTo(Long inReplyTo) {
+            this.inReplyTo = inReplyTo;
+        }
+
+        public String getOriginalAuthorName() {
+            return originalAuthorName;
+        }
+
+        public void setOriginalAuthorName(String originalAuthorName) {
+            this.originalAuthorName = originalAuthorName;
+        }
+
+        public String getOriginalMessageSnippet() {
+            return originalMessageSnippet;
+        }
+
+        public void setOriginalMessageSnippet(String originalMessageSnippet) {
+            this.originalMessageSnippet = originalMessageSnippet;
+        }
+    }
+}
+
+
+
+
+package com.elrayn.LnL.controller;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
+import org.springframework.messaging.Message;
+import org.springframework.web.socket.messaging.SessionConnectedEvent;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+@Slf4j
+@Controller
+@RequiredArgsConstructor
+public class SignalingController {
+
+    private final SimpMessagingTemplate messagingTemplate;
+    private static final ConcurrentLinkedQueue<String> waiting = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentHashMap<String, String> pairs = new ConcurrentHashMap<>();
+
+    // ✅ Este método é ESSENCIAL
+    @EventListener
+    public void onConnect(SessionConnectedEvent event) {
+        String sessionId = event.getMessage().getHeaders().get("simpSessionId", String.class);
+        if (sessionId != null) {
+            log.info("✅ Usuário conectado: {}", sessionId);
+            // ✅ Envie para um tópico EXPLÍCITO com o sessionId
+            messagingTemplate.convertAndSend("/topic/welcome/" + sessionId, sessionId);
+        }
+    }
+
+    @MessageMapping("/video.join")
+    public void join(@Header("simpSessionId") String sessionId) {
+        if (sessionId == null || pairs.containsKey(sessionId) || waiting.contains(sessionId)) {
+            return;
+        }
+        log.info("📥 Usuário entrou na fila: {}", sessionId);
+        waiting.add(sessionId);
+        tryPair();
+    }
+
+    private synchronized void tryPair() {
+        while (waiting.size() >= 2) {
+            String a = waiting.poll();
+            String b = waiting.poll();
+            if (a == null || b == null || a.equals(b))
+                continue;
+
+            pairs.put(a, b);
+            pairs.put(b, a);
+            log.info("🔗 Emparelhado: {} ↔ {}", a, b);
+
+            messagingTemplate.convertAndSend("/topic/pair/" + a, Map.of("peer", b, "initiator", true));
+            messagingTemplate.convertAndSend("/topic/pair/" + b, Map.of("peer", a, "initiator", false));
+        }
+    }
+
+    @MessageMapping("/video.signal")
+    public void signal(Map<String, Object> payload, @Header("simpSessionId") String sender) {
+        String receiver = pairs.get(sender);
+        if (receiver != null) {
+            messagingTemplate.convertAndSend("/topic/signal/" + receiver, payload);
+        }
+    }
+
+    @EventListener
+    public void onDisconnect(SessionDisconnectEvent event) {
+        String id = event.getSessionId();
+        if (id != null) {
+            waiting.remove(id);
+            String peer = pairs.remove(id);
+            if (peer != null) {
+                pairs.remove(peer);
+                messagingTemplate.convertAndSend("/topic/signal/" + peer, Map.of("type", "peerLeft"));
+            }
+            log.info("👋 Usuário desconectado: {}", id);
+        }
+    }
+
+    @MessageMapping("/get-session-id")
+    public void getSessionId(Message<?> msg) {
+        String sessionId = SimpMessageHeaderAccessor.wrap(msg).getSessionId();
+        if (sessionId != null) {
+            messagingTemplate.convertAndSend("/topic/welcome-ack", sessionId);
+        }
+    }
+
+}
+
+
+
+package com.elrayn.LnL.controller;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
+import org.springframework.messaging.Message;
+import org.springframework.web.socket.messaging.SessionConnectedEvent;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+@Slf4j
+@Controller
+@RequiredArgsConstructor
+public class SignalingController {
+
+    private final SimpMessagingTemplate messagingTemplate;
+    private static final ConcurrentLinkedQueue<String> waiting = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentHashMap<String, String> pairs = new ConcurrentHashMap<>();
+
+    // ✅ Este método é ESSENCIAL
+    @EventListener
+    public void onConnect(SessionConnectedEvent event) {
+        String sessionId = event.getMessage().getHeaders().get("simpSessionId", String.class);
+        if (sessionId != null) {
+            log.info("✅ Usuário conectado: {}", sessionId);
+            // ✅ Envie para um tópico EXPLÍCITO com o sessionId
+            messagingTemplate.convertAndSend("/topic/welcome/" + sessionId, sessionId);
+        }
+    }
+
+    @MessageMapping("/video.join")
+    public void join(@Header("simpSessionId") String sessionId) {
+        if (sessionId == null || pairs.containsKey(sessionId) || waiting.contains(sessionId)) {
+            return;
+        }
+        log.info("📥 Usuário entrou na fila: {}", sessionId);
+        waiting.add(sessionId);
+        tryPair();
+    }
+
+    private synchronized void tryPair() {
+        while (waiting.size() >= 2) {
+            String a = waiting.poll();
+            String b = waiting.poll();
+            if (a == null || b == null || a.equals(b))
+                continue;
+
+            pairs.put(a, b);
+            pairs.put(b, a);
+            log.info("🔗 Emparelhado: {} ↔ {}", a, b);
+
+            messagingTemplate.convertAndSend("/topic/pair/" + a, Map.of("peer", b, "initiator", true));
+            messagingTemplate.convertAndSend("/topic/pair/" + b, Map.of("peer", a, "initiator", false));
+        }
+    }
+
+    @MessageMapping("/video.signal")
+    public void signal(Map<String, Object> payload, @Header("simpSessionId") String sender) {
+        String receiver = pairs.get(sender);
+        if (receiver != null) {
+            messagingTemplate.convertAndSend("/topic/signal/" + receiver, payload);
+        }
+    }
+
+    @EventListener
+    public void onDisconnect(SessionDisconnectEvent event) {
+        String id = event.getSessionId();
+        if (id != null) {
+            waiting.remove(id);
+            String peer = pairs.remove(id);
+            if (peer != null) {
+                pairs.remove(peer);
+                messagingTemplate.convertAndSend("/topic/signal/" + peer, Map.of("type", "peerLeft"));
+            }
+            log.info("👋 Usuário desconectado: {}", id);
+        }
+    }
+
+    @MessageMapping("/get-session-id")
+    public void getSessionId(Message<?> msg) {
+        String sessionId = SimpMessageHeaderAccessor.wrap(msg).getSessionId();
+        if (sessionId != null) {
+            messagingTemplate.convertAndSend("/topic/welcome-ack", sessionId);
+        }
+    }
+
+}
+
+
+
+package com.elrayn.LnL.controller;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+import jakarta.servlet.http.HttpSession;
+
+@Controller
+@RequestMapping("/video-session")
+public class VideoSessionController {
+
+    @GetMapping("/enter") 
+    public String startVideoSession(HttpSession session) {
+        return "videochat";
+    }
+    
+}
+
+
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class AdImpression {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private AdType adType;
+
+    @Column(nullable = false)
+    private String adProvider;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant impressionTime;
+
+    @Column(nullable = false)
+    private boolean clicked;
+
+    @Column(nullable = false)
+    private UUID sessioUUID;
+
+    enum AdType {
+        BANNER, VIDEO_INTER
+    }
+
+
+    public void setAdType(String adType) {
+        this.adType = AdType.valueOf(adType.toUpperCase());
+    }
+
+}
+
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class Answer {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne
+    @JoinColumn(name = "question_id")
+    private Question question;
+
+    @ManyToOne
+    @JoinColumn(name = "author_id")
+    private AppUser author;
+
+    @Column(nullable = false)
+    private String text;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant  createdAt;
+
+    @Column(nullable = false)
+    private boolean isPublished;
+
+}
+
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class AppUser {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String username;
+
+    @Column(nullable = false)
+    private UUID uuid;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant createdAt;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant lastSeenAt;
+
+    @ManyToOne
+    @JoinColumn(name = "avatar_id", nullable = true)
+    private Avatar avatar;
+
+    @Column(nullable = false)
+    private boolean isBanned;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Role role;
+
+    public enum Role {
+        APPUSER, ADMIN
+    }
+}
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class Avatar {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String name;
+
+    @Column(nullable = false)
+    private String imagePath;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant createdAt;
+
+}
+
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class Question {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne
+    @JoinColumn(name = "room_id")
+    private Room room;
+
+    @ManyToOne
+    @JoinColumn(name = "author_id")
+    private AppUser author;
+
+    @Column(nullable = false)
+    private String text;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant createdAt;
+
+    @Column(nullable = false)
+    private Integer upvotes;
+
+    @Column(nullable = false)
+    private boolean isPrivate;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Status status;
+
+    public enum Status {
+        PENDING, FILTERED, PUBLISHED, ANSWERED
+    }
+}
+
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Report {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne
+    @JoinColumn(name = "reporter_id")
+    private AppUser reporter;
+
+    @ManyToOne
+    @JoinColumn(name = "reported_user_id")
+    private AppUser reportedUser;
+
+    @ManyToOne
+    @JoinColumn(name = "video_session_id")
+    private VideoSession videoSession;
+
+    @ManyToOne
+    @JoinColumn(name = "room_id")
+    private Room room;
+
+    private String reason;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant  createdAt;
+
+    @Column(nullable = false)
+    private boolean processed;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Action actionTaken;
+
+}
+
+enum Action {
+    WARN, TEMP_BAN, PERM_BAN, NO_ACTION
+}
+
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class Room {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private UUID uuid;
+
+    @ManyToOne
+    @JoinColumn(name = "owner_id")
+    private AppUser owner;
+
+    @Column(nullable = false)
+    private String title;
+
+    @Column(nullable = false)
+    private String description;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Mode mode;
+
+    @Column(nullable = false)
+    private Integer durationMinutes;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant createdAt;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant  expiresAt;
+
+    @Column(nullable = false)
+    private boolean isPublic;
+
+    @Column(nullable = false)
+    private boolean archieved;
+
+    
+    @Column(nullable = false)
+    private Integer maxVisitors;
+
+
+    public enum Mode {
+        TEXT, AUDIO, BOTH
+    }
+
+}
+
+enum Mode {
+    TEXT, AUDIO, BOTH
+}
+
+
+package com.elrayn.LnL.model.entity;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class VideoSession {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private UUID sessioUUID;
+
+    @Column(nullable = false)
+    private String peerAId;
+
+    @Column(nullable = false)
+    private String peerBId;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant  startedAt;
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMP WITH TIME ZONE")
+    private Instant  endedAt;
+
+    @Column(nullable = false)
+    private Integer durationSeconds;
+
+    @Column(nullable = true)
+    private String endedBy;
+
+    @Column(unique = false)
+    private boolean wasReported;
+}
+
+
+
+package com.elrayn.LnL.model.repository;
+
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import com.elrayn.LnL.model.entity.AdImpression;
+
+@Repository
+public interface AdImpressionRepository extends JpaRepository<AdImpression, Long> {
+    Optional<AdImpression> findBySessioUUID(UUID sessioUUID);
+}
+
+
+package com.elrayn.LnL.model.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import com.elrayn.LnL.model.entity.Answer;
+
+@Repository
+public interface AnswerRepository extends JpaRepository<Answer, Long> {
+}
+
+
+package com.elrayn.LnL.model.repository;
+
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import com.elrayn.LnL.model.entity.AppUser;
+
+@Repository
+public interface AppUserRepository extends JpaRepository<AppUser, Long> {
+    AppUser findByUuid(UUID uuid);
+}
+
+
+package com.elrayn.LnL.model.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import com.elrayn.LnL.model.entity.Avatar;
+
+@Repository
+public interface AvatarRepository extends JpaRepository<Avatar, Long> {
+}
+
+
+package com.elrayn.LnL.model.repository;
+
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import com.elrayn.LnL.model.entity.Question;
+import com.elrayn.LnL.model.entity.Room;
+
+@Repository
+public interface QuestionRepository extends JpaRepository<Question, Long> {
+    List<Question> findByRoomOrderByCreatedAtAsc(Room room);
+
+    @Query("SELECT q FROM Question q LEFT JOIN FETCH q.author WHERE q.room = :room ORDER BY q.createdAt ASC")
+    List<Question> findByRoomWithAuthor(@Param("room") Room room);
+}
+
+
+package com.elrayn.LnL.model.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import com.elrayn.LnL.model.entity.Report;
+
+@Repository
+public interface ReportRepository extends JpaRepository<Report, Long>{
+}
+
+
+
+package com.elrayn.LnL.model.repository;
+
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import com.elrayn.LnL.model.entity.Room;
+
+@Repository
+public interface RoomRepository extends JpaRepository<Room, Long> {
+    Optional<Room> findByUuid(UUID uuid);
+}
+
+
+package com.elrayn.LnL.model.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import com.elrayn.LnL.model.entity.VideoSession;
+
+@Repository
+public interface VideoSessionRepository extends JpaRepository<VideoSession, Long> {
+
+}
+
+
+package com.elrayn.LnL.model.service;
+
+import com.elrayn.LnL.model.entity.AdImpression;
+import com.elrayn.LnL.model.repository.AdImpressionRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Service
+public class AdService {
+
+    @Autowired
+    private AdImpressionRepository adImpressionRepository;
+
+    public void logImpression(String adTypeStr, String adProvider, boolean clicked, UUID sessionUUID) {
+        AdImpression impression = new AdImpression();
+        impression.setAdType(adTypeStr);
+        impression.setAdProvider(adProvider);
+        impression.setImpressionTime(Instant.now());
+        impression.setClicked(clicked);
+        impression.setSessioUUID(sessionUUID);
+        adImpressionRepository.save(impression);
+    }
+}
+
+
+package com.elrayn.LnL.model.service;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.elrayn.LnL.model.entity.Answer;
+import com.elrayn.LnL.model.entity.Room;
+import com.elrayn.LnL.model.repository.AnswerRepository;
+
+@Service
+public class AnswerService {
+
+    @Autowired
+    private AnswerRepository answerRepository;
+
+    public Answer save(Answer answer) {
+        return answerRepository.save(answer);
+    }
+
+    public Optional<Answer> findById(long id) {
+        return answerRepository.findById(id);
+    }
+
+    public List<Answer> findByRoom(Room room) {
+        return answerRepository.findAll().stream()
+                .filter(p -> p.getQuestion().getRoom().getUuid().equals(room.getUuid())).collect(Collectors.toList());
+    }
+
+}
+
+
+package com.elrayn.LnL.model.service;
+
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.elrayn.LnL.model.entity.AppUser;
+import com.elrayn.LnL.model.repository.AppUserRepository;
+
+@Service
+public class AppUserService {
+
+    @Autowired
+    private AppUserRepository appUserRepository;
+
+    public List<AppUser> findAll() {
+        return appUserRepository.findAll();
+    }
+
+    public AppUser save(AppUser host) {
+        return appUserRepository.save(host);
+    }
+
+    public AppUser findByUuid(UUID uuid) {
+        return appUserRepository.findByUuid(uuid);
+    }
+
+    
+}
+
+
+package com.elrayn.LnL.model.service;
+
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.elrayn.LnL.model.entity.Avatar;
+import com.elrayn.LnL.model.repository.AvatarRepository;
+
+@Service
+public class AvatarService {
+
+    @Autowired
+    private AvatarRepository avatarRepository;
+
+    public List<Avatar> findAll() {
+        return avatarRepository.findAll();
+    }
+
+    public Avatar save(Avatar avatar) {
+        return avatarRepository.save(avatar);
+    }
+
+}
+
+
+package com.elrayn.LnL.model.service;
+
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.elrayn.LnL.model.entity.Question;
+import com.elrayn.LnL.model.entity.Room;
+import com.elrayn.LnL.model.repository.QuestionRepository;
+
+@Service
+public class QuestionService {
+
+    @Autowired
+    private QuestionRepository questionRepository;
+
+    public List<Question> findByRoomOrderByCreatedAtAsc(Room room) {
+        return questionRepository.findByRoomOrderByCreatedAtAsc(room);
+    }
+
+    public Question save(Question question) {
+        return questionRepository.save(question);
+    }
+
+    public List<Question> findByRoomWithAuthor(Room room) {
+        return questionRepository.findByRoomWithAuthor(room);
+    }
+
+    public Optional<Question> findById(long inReplyTo) {
+        return questionRepository.findById(inReplyTo);
+    }
+
+}
+
+package com.elrayn.LnL.model.service;
+
+public class ReportService {   
+}
+
+
+package com.elrayn.LnL.model.service;
+
+import java.util.Optional;
+import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.elrayn.LnL.model.entity.Room;
+import com.elrayn.LnL.model.repository.RoomRepository;
+
+@Service
+public class RoomService {
+
+    @Autowired
+    private RoomRepository roomRepository;
+
+    public Room save(Room room) {
+        return roomRepository.save(room);
+    }
+
+    public Optional<Room> findByUuid(UUID uuid) {
+        return roomRepository.findByUuid(uuid);
+    }
+
+}
+
+
+package com.elrayn.LnL.model.service;
+
+public class VideoSessionService {   
+}
+
+
+
+package com.elrayn.LnL;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class Application {
+	public static void main(String[] args) {
+		SpringApplication.run(Application.class, args);
+	}
+}
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+src/main/resources/templates/create-room.html
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/css/create-room.css">
+    <title>Criar Sala Q&A — Link&Live</title>
+</head>
+
+<body>
+    <a href="/" class="back-link">← Voltar</a>
+    <div class="container">
+        <h1>Criar Sala Q&A</h1>
+        <p class="subtitle">Configure sua sala de perguntas e respostas</p>
+
+        <div class="intrusive-ad">ANÚNCIO — Área visível para avaliação</div>
+
+        <form method="POST" action="/room/create">
+            <div th:if="${error}" class="error" th:text="${error}"></div>
+            <div class="field">
+                <label>Título da Sala</label>
+                <input type="text" name="title" class="input" placeholder="Ex: Pergunte-me qualquer coisa..."
+                    required />
+            </div>
+            <div class="field">
+                <label>Duração</label>
+                <div class="toggle-group">
+                    <button type="button" class="toggle-btn active" onclick="setDuration('15min')">15 min</button>
+                    <button type="button" class="toggle-btn" onclick="setDuration('1h')">1 hora</button>
+                    <button type="button" class="toggle-btn" onclick="setDuration('24h')">24 horas</button>
+                </div>
+                <input type="hidden" name="duration" id="duration-input" value="15min" />
+            </div>
+            <div class="field">
+                <label>Modo</label>
+                <div class="toggle-group">
+                    <button type="button" class="toggle-btn active" onclick="setMode('text')">Somente Texto</button>
+                    <button type="button" class="toggle-btn" onclick="setMode('audio')">Texto + Áudio</button>
+                </div>
+                <input type="hidden" name="mode" id="mode-input" value="text" />
+            </div>
+            <button type="submit" class="btn">Criar Sala</button>
+        </form>
+    </div>
+    <script src="/js/create-room.js"></script>
+</body>
+
+</html>
+
+
+src/main/resources/templates/home.html
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/css/home.css" />
+    <title>Link&Live</title>
+</head>
+
+<body>
+    <div class="main-content">
+        <div class="logo">Link&Live</div>
+        <div class="hero">
+            <h1>Connect Through<br /><span>Q&A & Video</span></h1>
+            <p>Share questions anonymously or meet new people instantly</p>
+        </div>
+        <div class="action-buttons">
+            <a href="/room/create" class="btn btn-primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M21 15C21 15.5523 20.5523 16 20 16H6L2 20V4C2 3.44772 2.44772 3 3 3H20C20.5523 3 21 3.44772 21 4V15Z"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Criar Sala Q&A
+            </a>
+            <a href="/room/join" class="btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M15 7C15 8.10457 14.1046 9 13 9C11.8954 9 11 8.10457 11 7C11 5.89543 11.8954 5 13 5C14.1046 5 15 5.89543 15 7Z"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <path
+                        d="M18.5 11H17C16.4477 11 16 11.4477 16 12V19C16 19.5523 15.5523 20 15 20H9C8.44772 20 8 19.5523 8 19V12C8 11.4477 7.55228 11 7 11H5.5"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M7 8L5 11" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M17 8L19 11" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+                Entrar via Link
+            </a>
+            <a href="/video-session/enter" class="btn btn-accent">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M23 7L16 12L23 17V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <rect x="1" y="5" width="15" height="14" rx="2" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Videochat Aleatório
+            </a>
+        </div>
+        <div class="stats">
+            <div class="stat-item">
+                <div class="value">50K+</div>
+                <div class="label">Salas Criadas</div>
+            </div>
+            <div class="stat-item">
+                <div class="value">1M+</div>
+                <div class="label">Conversas</div>
+            </div>
+            <div class="stat-item">
+                <div class="value">24/7</div>
+                <div class="label">Online</div>
+            </div>
+        </div>
+    </div>
+    <div class="sidebar-ad">
+        <h3>ANÚNCIO LATERAL</h3>
+        <p>Este é um espaço publicitário visível apenas em telas desktop. Ideal para campanhas do Google Ads,
+            AliExpress, etc.</p>
+    </div>
+    <div class="ad-banner">Publicidade</div>
+    <script src="/js/home.js"> </script>
+</body>
+
+</html>
+
+src/main/resources/templates/join-room.html
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Entrar na Sala — Link&Live</title>
+    <link rel="stylesheet" href="/css/join-room.css">
+</head>
+
+<body><a href="/" class="back-link">← Voltar</a>
+    <div class="container">
+        <h1>Entrar na Sala</h1>
+        <p class="subtitle">Cole o link da sala Q&A que você recebeu</p>
+        <div class="intrusive-ad">ANÚNCIO — Área para avaliação</div>
+        <form method="POST" action="/room/join">
+            <div th:if="${error}" class="error" th:text="${error}"></div>
+            <div class="field"><label>Link da Sala</label>
+                <div class="input-container"><input type="text" name="roomLink" id="room-link" class="input"
+                        placeholder="https://linkandlive.app/room/abc123" required /><button type="button"
+                        class="paste-btn" id="paste-btn">Paste</button></div>
+            </div><button type="submit" class="btn">Entrar na Sala</button>
+        </form>
+    </div>
+    <script src="/js/join-room.js"></script>
+</body>
+</html>
+
+
+src/main/resources/templates/qa-room.html
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title th:text="${room.title + ' — Link&Live'}">Sala Q&A — Link&Live</title>
+  <link rel="stylesheet" href="/css/qa-room.css">
+
+  <!-- <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script> -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script> -->
+  <script src="/js/sockjs.min.js"></script>
+  <script src="/js/stomp.min.js"></script>
+
+</head>
+
+<body>
+  <div class="header">
+    <a href="/">← VOLTAR</a>
+    <div>
+      <div class="room-title" th:text="${room.title}">Pergunte-me qualquer coisa...</div>
+      <div class="visitor-count" id="visitor-count">Carregando...</div>
+    </div>
+    <button class="share-btn" id="share-btn">🔗</button>
+  </div>
+
+  <!-- Preview de Resposta -->
+  <div class="reply-preview" id="reply-preview" style="display: none;">
+    <span class="reply-to" id="reply-to-name">...</span>
+    <span class="reply-timestamp" id="reply-timestamp">...</span>
+    <div class="reply-snippet" id="reply-snippet">...</div>
+    <button class="reply-cancel" id="reply-cancel">×</button>
+  </div>
+
+  <div class="chat-container">
+    <div class="messages" id="messages">
+      <div th:each="msg : ${allMessages}" th:data-id="${msg.id}" th:data-author-uuid="${msg.author.uuid}"
+        th:data-text="${msg.text}" th:data-timestamp="${#temporals.format(msg.createdAt, 'HH:mm')}"
+        th:data-author-name="${msg.author.username}"
+        th:class="${msg.author.uuid.toString() == visitorUuid ? 'message right' : 'message left'}">
+        <div class="avatar" th:text="${#strings.substring(msg.author.username, 0, 2)}">A</div>
+        <div class="message-content-wrap">
+          <div class="message-bubble" th:utext="${#strings.escapeXml(msg.text)}">...</div>
+          <div class="reactions">
+            <span class="reaction">👍 <span th:text="${msg.upvotes}">0</span></span>
+            <span class="reaction">😂 0</span>
+            <span class="reaction">⭐ 0</span>
+          </div>
+          <button class="reply-btn">Reply</button>
+        </div>
+      </div>
+    </div>
+
+    <form id="messageForm" class="input-area">
+      <input type="hidden" id="replyToMessageId" />
+      <input type="text" id="messageInput" class="message-input" placeholder="Digite sua pergunta ou resposta..."
+        required />
+      <button type="submit" class="send-btn">➤</button>
+    </form>
+  </div>
+
+  <div class="ad-banner">Publicidade</div>
+
+  <!-- Action Sheet Mobile -->
+  <div id="action-sheet" class="action-sheet" style="display: none;">
+    <div class="action-sheet-content">
+      <button id="action-reply" class="action-btn">Responder</button>
+      <button id="action-cancel" class="action-btn cancel">Cancelar</button>
+    </div>
+  </div>
+
+  <script src="/js/qa-room.js"></script>
+
+</body>
+
+</html>
+
+
+src/main/resources/templates/videochat.html
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Videochat — Link&Live</title>
+    <link rel="stylesheet" href="/css/videochat.css">
+    <script src="/js/sockjs.min.js"></script>
+    <script src="/js/stomp.min.js"></script>
+</head>
+
+<body>
+    <div class="ad-banner">Publicidade — Banner permanente durante videochat</div>
+    <div class="video-container">
+        <div class="stranger-video">
+            <!-- Vídeo do outro usuário -->
+        </div>
+        <div class="my-video">  
+            <!-- Seu vídeo (PIP) -->
+        </div>
+        <button class="report-btn" title="Reportar usuário">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 4H20L12 12L4 4Z" stroke="#f44336" stroke-width="2" />
+                <path d="M12 12V20" stroke="#f44336" stroke-width="2" />
+            </svg>
+        </button>
+        <div class="controls">
+            <button class="btn btn-end" id="end-btn">SAIR</button>
+            <button class="btn btn-next" id="next-btn">NEXT</button>
+        </div>
+    </div>
+    <div class="ad-dialog" id="ad-dialog" style="display: none;">
+        <div class="ad-dialog-content">
+            <h3>Publicidade</h3>
+            <p>Aguarde <span id="ad-timer">3</span> segundos.</p>
+        </div>
+    </div>
+    <script src="/js/videochat.js"></script>
+</body>
+
+</html>
+
+---------------------------------------------------------------------------------------------------------------------------
+src/main/resources/static/css/create-room.css
+
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9f9f9;
+    --text-primary: #212121;
+    --text-secondary: #757575;
+    --color-primary: #00BCD4;
+    --color-accent: #CDDC39;
+    --border-color: #e0e0e0;
+    --radius-lg: 24px;
+    --radius-md: 16px;
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --font-sans: 'Google Sans', 'Roboto', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary: #121212;
+        --bg-secondary: #1e1e1e;
+        --text-primary: #E0E0E0;
+        --text-secondary: #B0B0B0;
+        --border-color: #333;
+    }
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 2rem;
+    min-height: 100vh;
+    position: relative;
+}
+
+.back-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+    width: fit-content;
+}
+
+.container {
+    max-width: 500px;
+    margin: 0 auto;
+    background: var(--bg-secondary);
+    padding: 2rem;
+    border-radius: var(--radius-lg);
+    position: relative;
+}
+
+h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.subtitle {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+.field {
+    margin-bottom: 1.5rem;
+}
+
+label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.input {
+    width: 100%;
+    padding: 0.6rem 0;
+    font-size: 1rem;
+    background: transparent;
+    color: var(--text-primary);
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.input:focus {
+    border-bottom-color: var(--color-primary);
+    transform: scale(1.01);
+    box-shadow: 0 2px 6px rgba(0, 188, 212, 0.15);
+}
+
+.toggle-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.toggle-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Efeito moderno ao hover e ativo */
+.toggle-btn:hover,
+.toggle-btn.active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+    transform: scale(1.03);
+    box-shadow: 0 4px 12px rgba(0, 188, 212, 0.25);
+}
+
+.btn {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn:hover {
+    opacity: 0.95;
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(0, 188, 212, 0.35);
+}
+
+.intrusive-ad {
+    background: #fff8e1;
+    padding: 1rem;
+    border-radius: 12px;
+    margin: 2rem 0;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #5d4037;
+    border: 1px dashed #ff9800;
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: 1.5rem;
+    }
+
+    .container {
+        padding: 1.5rem;
+    }
+}
+
+
+
+src/main/resources/static/css/home.css
+
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9f9f9;
+    --text-primary: #212121;
+    --text-secondary: #757575;
+    --color-primary: #00BCD4;
+    --color-accent: #CDDC39;
+    --border-color: #e0e0e0;
+    --radius-lg: 24px;
+    --radius-md: 16px;
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-hover: 0 6px 20px rgba(0, 188, 212, 0.25);
+    --font-sans: 'Google Sans', 'Roboto', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary: #121212;
+        --bg-secondary: #1e1e1e;
+        --text-primary: #080707;
+        --text-secondary: #B0B0B0;
+        --border-color: #333;
+    }
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    grid-template-rows: 1fr auto;
+    gap: 0;
+}
+
+.main-content {
+    padding: 2.5rem 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2.5rem;
+}
+
+.logo {
+    align-self: flex-start;
+    font-size: 2.25rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.hero {
+    text-align: center;
+    max-width: 600px;
+}
+
+.hero h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.hero h1 span {
+    color: var(--color-primary);
+}
+
+.hero p {
+    font-size: 1.125rem;
+    color: var(--text-secondary);
+    margin-top: 0.75rem;
+}
+
+.action-buttons {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    font-weight: 600;
+    font-size: 1.125rem;
+    padding: 1.125rem 1.5rem;
+    border-radius: var(--radius-md);
+    background: white;
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: var(--shadow-sm);
+    border: 2px solid var(--border-color);
+}
+
+.btn:hover {
+    transform: scale(1.03);
+    box-shadow: var(--shadow-hover);
+}
+
+.btn-primary {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.btn-primary:hover {
+    background: var(--color-primary);
+}
+
+.btn-accent {
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+    color: black;
+    border: none;
+}
+
+.stats {
+    display: flex;
+    gap: 2rem;
+    text-align: center;
+}
+
+.stat-item .value {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.stat-item .label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.sidebar-ad {
+    background: var(--bg-secondary);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border-left: 1px solid var(--border-color);
+}
+
+.sidebar-ad::before {
+    content: "🧧";
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.sidebar-ad h3 {
+    font-size: 1.125rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.sidebar-ad p {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.ad-banner {
+    grid-column: 1 / -1;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 992px) {
+    body {
+        grid-template-columns: 1fr;
+        padding-bottom: 4rem;
+    }
+
+    .sidebar-ad {
+        display: none;
+    }
+
+    .ad-banner {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        z-index: 1000;
+    }
+
+    .main-content {
+        padding-bottom: 4rem;
+    }
+}
+
+
+
+src/main/resources/static/css/join-room.css
+
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9f9f9;
+    --text-primary: #212121;
+    --text-secondary: #757575;
+    --color-primary: #00BCD4;
+    --border-color: #e0e0e0;
+    --radius-lg: 24px;
+    --radius-md: 16px;
+    --font-sans: 'Google Sans', 'Roboto', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary: #121212;
+        --bg-secondary: #1e1e1e;
+        --text-primary: #E0E0E0;
+        --text-secondary: #B0B0B0;
+        --border-color: #333;
+    }
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 2rem;
+    min-height: 100vh;
+}
+
+.back-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+    width: fit-content;
+}
+
+.container {
+    max-width: 500px;
+    margin: 0 auto;
+    background: var(--bg-secondary);
+    padding: 2rem;
+    border-radius: var(--radius-lg);
+}
+
+h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.subtitle {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+.field {
+    margin-bottom: 1.5rem;
+}
+
+label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.input-container {
+    position: relative;
+}
+
+.input {
+    width: 100%;
+    padding: 0.6rem 40px 0.6rem 0;
+    font-size: 1rem;
+    background: transparent;
+    color: var(--text-primary);
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.input:focus {
+    border-bottom-color: var(--color-primary);
+    transform: scale(1.01);
+    box-shadow: 0 2px 6px rgba(0, 188, 212, 0.15);
+}
+
+.paste-btn {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.paste-btn:hover {
+    background: #00acc1;
+    transform: scale(1.05);
+    box-shadow: 0 4px 10px rgba(0, 188, 212, 0.3);
+}
+
+.btn {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn:hover {
+    opacity: 0.95;
+    transform: scale(1.02);
+    box-shadow: 0 6px 20px rgba(0, 188, 212, 0.35);
+}
+
+.intrusive-ad {
+    background: #e8f5e9;
+    padding: 1rem;
+    border-radius: 12px;
+    margin: 2rem 0;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #2e7d32;
+    border: 1px dashed #4caf50;
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: 1.5rem;
+    }
+
+    .container {
+        padding: 1.5rem;
+    }
+}
+
+
+
+src/main/resources/static/css/qa-room.css
+
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f0f2f5;
+    --chat-bg: #ffffff;
+    --text-primary: #212121;
+    --text-secondary: #65676b;
+    --sent-bg: #d9fdd3;
+    /* WhatsApp green */
+    --received-bg: #f0f0f0;
+    /* WhatsApp gray */
+    --reply-card-bg: #e4e6ea;
+    --border-color: #e4e6ea;
+    --radius-lg: 20px;
+    --font-sans: 'Google Sans', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary: #000000;
+        --bg-secondary: #121212;
+        --chat-bg: #1e1e1e;
+        --text-primary: #E0E0E0;
+        --text-secondary: #B0B0B0;
+        --sent-bg: #2b413a;
+        /* Dark green */
+        --received-bg: #2a2a2a;
+        /* Dark gray */
+        --reply-card-bg: #252525;
+        --border-color: #333;
+    }
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.room-title {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.visitor-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.share-btn {
+    background: #25D366;
+    color: white;
+    border: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+/* Reply Preview Card */
+.reply-preview {
+    background: var(--reply-card-bg);
+    padding: 0.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 48px;
+    z-index: 90;
+}
+
+.reply-to {
+    font-size: 0.875rem;
+    font-weight: bold;
+    color: var(--text-primary);
+}
+
+.reply-timestamp {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.reply-snippet {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reply-cancel {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.reply-cancel:hover {
+    color: #ff4d4d;
+}
+
+.chat-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+    background: var(--chat-bg);
+}
+
+.messages {
+    flex: 1;
+    padding: 1rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.message {
+    display: flex;
+    gap: 0.75rem;
+    max-width: 75%;
+    position: relative;
+}
+
+.message.left {
+    align-self: flex-start;
+}
+
+.message.right {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #00BCD4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+    flex-shrink: 0;
+}
+
+.message-content-wrap {
+    flex: 1;
+    min-width: 0;
+}
+
+.message-bubble {
+    padding: 0.6rem 0.8rem;
+    border-radius: 18px;
+    line-height: 1.35;
+    word-break: break-word;
+    position: relative;
+}
+
+.message.left .message-bubble {
+    background: var(--received-bg);
+    color: var(--text-primary);
+    border-bottom-left-radius: 4px;
+}
+
+.message.right .message-bubble {
+    background: var(--sent-bg);
+    color: var(--text-primary);
+    border-bottom-right-radius: 4px;
+}
+
+/* Desktop Hover Effect */
+.message:hover .message-bubble {
+    filter: blur(2px);
+    transition: filter 0.2s ease;
+}
+
+.message .reply-btn {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    color: #00bc6a;
+    border: none;
+    border-radius: 20px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    z-index: 10;
+}
+
+.message:hover .reply-btn {
+    display: block;
+}
+
+.reactions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.reaction {
+    cursor: pointer;
+}
+
+.reaction:hover {
+    color: #00BCD4;
+}
+
+.input-area {
+    display: flex;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border-color);
+    gap: 0.5rem;
+}
+
+.message-input {
+    flex: 1;
+    border: none;
+    padding: 0.6rem 1rem;
+    border-radius: 24px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.send-btn {
+    background: #25D366;
+    color: white;
+    border: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ad-banner {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: var(--bg-secondary);
+    padding: 0.3rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
+    z-index: 1000;
+}
+
+/* Mobile Action Sheet */
+.action-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.action-sheet-content {
+    background: var(--bg-primary);
+    width: 100%;
+    max-width: 400px;
+    border-radius: 20px 20px 0 0;
+    padding: 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.action-btn {
+    padding: 1rem;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+}
+
+.action-btn.cancel {
+    color: #f44336;
+    background: transparent;
+}
+
+.action-btn:not(.cancel) {
+    background: #25D366;
+    color: white;
+}
+
+.reply-context {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0.25rem 0.5rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    line-height: 1.3;
+}
+
+.reply-context strong {
+    color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+    .message {
+        max-width: 85%;
+    }
+
+    .reply-context {
+        background: rgba(255, 255, 255, 0.05);
+    }
+}
+
+
+
+src/main/resources/static/css/videochat.css
+:root {
+    --bg-primary: #000000;
+    --text-primary: #E0E0E0;
+    --color-primary: #00BCD4;
+    --radius-lg: 24px;
+    --font-sans: 'Google Sans', system-ui, sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow: hidden;
+    position: relative;
+}
+
+.ad-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 0.5rem;
+    text-align: center;
+    font-size: 0.875rem;
+    color: #aaa;
+    border-bottom: 1px solid #333;
+    background: rgba(30, 30, 30, 0.92);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.video-container {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding-top: 3rem;
+}
+
+.stranger-video {
+    width: 90%;
+    max-width: 800px;
+    height: 70vh;
+    background: #1a1a1a;
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 1.25rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.my-video {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.5rem;
+    width: 140px;
+    height: 105px;
+    background: #222;
+    border: 2px solid rgba(0, 188, 212, 0.5);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    color: #777;
+    z-index: 10;
+}
+
+.controls {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 1.25rem;
+    z-index: 10;
+}
+
+.btn {
+    padding: 0.8rem 1.8rem;
+    border-radius: 50px;
+    font-weight: 600;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-end {
+    background: #333;
+    color: white;
+    border: 1px solid #444;
+}
+
+.btn-end:hover {
+    background: #444;
+    transform: scale(1.03);
+}
+
+.btn-next {
+    background: var(--color-primary);
+    color: white;
+    padding: 0.9rem 2.5rem;
+}
+
+.btn-next:hover {
+    background: #00acc1;
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 188, 212, 0.4);
+}
+
+.ad-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    color: white;
+    font-size: 1.25rem;
+}
+
+.ad-dialog-content {
+    background: #1e1e1e;
+    padding: 2rem;
+    border-radius: 20px;
+    text-align: center;
+    max-width: 400px;
+    border: 2px dashed var(--color-primary);
+}
+
+.ad-dialog h3 {
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+}
+
+.ad-timer {
+    font-size: 2rem;
+    margin-top: 0.5rem;
+    color: var(--color-primary);
+}
+
+.report-btn {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    width: 48px;
+    height: 48px;
+    background: rgba(244, 67, 54, 0.15);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+}
+
+.report-btn:hover {
+    background: rgba(244, 67, 54, 0.3);
+}
+
+@media (max-width: 600px) {
+    .my-video {
+        width: 110px;
+        height: 82px;
+        top: 1rem;
+        right: 1rem;
+    }
+
+    .controls {
+        gap: 0.8rem;
+        bottom: 1.5rem;
+    }
+
+    .btn {
+        padding: 0.7rem 1.4rem;
+        font-size: 1rem;
+    }
+}
+
+
+----------------------------------------------------------------------------------------------------------------
+
+
+src/main/resources/static/js/create-room.js 
+
+function setDuration(value) {
+    document.querySelectorAll('.toggle-group')[0].querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('duration-input').value = value;
+}
+
+function setMode(value) {
+    document.querySelectorAll('.toggle-group')[1].querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('mode-input').value = value;
+}
+
+
+
+src/main/resources/static/js/home.js 
+//Nada ainda
+
+
+src/main/resources/static/js/join-room.js 
+
+const pasteBtn = document.getElementById('paste-btn');
+const input = document.getElementById('room-link');
+
+pasteBtn.addEventListener('click', async () => {
+    try {
+        const text = await navigator.clipboard.readText();
+        const urlPattern = /^https?:\/\/[^\/]+\/room(\/join)?\/[a-f0-9-]+$/i;
+        if (urlPattern.test(text)) {
+            input.value = text;
+            input.focus();
+        } else {
+            alert('Link inválido. Use:\nhttps://linkandlive.app/room/abc123');
+        }
+    } catch (err) {
+        alert('Permissão negada para clipboard.');
+    }
+});
+
+
+
+
+src/main/resources/static/js/qa-room.js 
+
+// ========== 1. Inicializar usuário com backend ==========
+async function initUser() {
+    const response = await fetch('/room/api/user/init');
+    if (!response.ok) throw new Error('Falha ao inicializar usuário');
+    const user = await response.json();
+    return user; // { uuid: "...", username: "..." }
+}
+
+// ========== 2. Escape seguro ==========
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+// ========== 3. Estado global ==========
+let CLIENT_USER = null;
+let ROOM_UUID = null;
+
+// ========== 4. Inicialização principal ==========
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // Extrair ROOM_UUID da URL
+        const pathParts = window.location.pathname.split('/');
+        ROOM_UUID = pathParts[pathParts.length - 1];
+        var x = ROOM_UUID.indexOf(';');
+        if (x !== -1) {
+            ROOM_UUID = ROOM_UUID.substring(0, x);
+        }
+
+        // Inicializar usuário com backend
+        CLIENT_USER = await initUser();
+        console.log('Usuário inicializado:', CLIENT_USER);
+
+        // Configurar WebSocket
+        const socket = new SockJS('/ws');
+        const stompClient = Stomp.over(socket);
+        stompClient.connect({}, () => {
+            stompClient.subscribe(`/topic/room/${ROOM_UUID}/messages`, (frame) => {
+                const msg = JSON.parse(frame.body);
+                const isMine = msg.authorUuid === CLIENT_USER.uuid;
+                renderMessage(msg, isMine);
+            });
+        });
+
+        // Configurar formulário
+        document.getElementById('messageForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = document.getElementById('messageInput').value.trim();
+            if (!text) return;
+
+            const payload = {
+                roomUuid: ROOM_UUID,
+                authorUuid: CLIENT_USER.uuid,
+                text: text,
+                inReplyTo: document.getElementById('replyToMessageId')?.value || null
+            };
+
+            stompClient.send('/app/room.message', {}, JSON.stringify(payload));
+            document.getElementById('messageInput').value = '';
+            clearReply();
+        });
+
+        // Compartilhar
+        document.getElementById('share-btn')?.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(window.location.href);
+                alert('Link copiado!');
+            } catch (err) {
+                const ta = document.createElement('textarea');
+                ta.value = window.location.href;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                alert('Link copiado (fallback).');
+            }
+        });
+
+    } catch (err) {
+        console.error('Erro na inicialização:', err);
+        alert('Falha ao carregar a sala. Recarregue a página.');
+    }
+});
+
+// ========== 5. Reply ==========
+let currentReply = null;
+function setReply(messageId, authorUuid, authorName, text, timestamp) {
+    currentReply = { messageId, authorUuid, authorName, text, timestamp };
+    document.getElementById('replyToMessageId').value = messageId;
+    document.getElementById('reply-to-name').textContent = authorUuid === CLIENT_USER.uuid ? 'Você' : authorName;
+    document.getElementById('reply-timestamp').textContent = timestamp;
+    document.getElementById('reply-snippet').textContent = escapeHtml(text.substring(0, 50));
+    document.getElementById('reply-preview').style.display = 'block';
+}
+
+function clearReply() {
+    currentReply = null;
+    if (document.getElementById('replyToMessageId')) {
+        document.getElementById('replyToMessageId').value = '';
+    }
+    document.getElementById('reply-preview').style.display = 'none';
+}
+
+document.getElementById('reply-cancel')?.addEventListener('click', clearReply);
+
+// ========== 6. Renderizar mensagem ==========
+function renderMessage(data, isMine) {
+    const messagesDiv = document.getElementById('messages');
+    if (!messagesDiv) return;
+
+    const li = document.createElement('div');
+    const id = data.id || Date.now();
+    const timestampFormatted = new Date(data.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    li.className = `message ${isMine ? 'right' : 'left'}`;
+    li.dataset.id = id;
+    li.dataset.authorUuid = data.authorUuid;
+    li.dataset.text = data.text;
+    li.dataset.timestamp = timestampFormatted;
+    li.dataset.authorName = data.authorName;
+
+    const initials = data.authorName.substring(0, 2).toUpperCase();
+    let bubbleContent = `<div class="message-bubble">${escapeHtml(data.text)}</div>`;
+
+    if (data.inReplyTo) {
+        const origName = data.originalAuthorName;
+        const origText = data.originalMessageSnippet;
+        const displayName = data.authorUuid === CLIENT_USER.uuid ? 'Você' : origName;
+        bubbleContent = `
+            <div class="reply-context">
+                <strong>${displayName}</strong>: ${escapeHtml(origText.substring(0, 30))}...
+            </div>
+            <div class="message-bubble">${escapeHtml(data.text)}</div>
+        `;
+    }
+
+    li.innerHTML = `
+        <div class="avatar">${initials}</div>
+        <div class="message-content-wrap">
+            ${bubbleContent}
+            <div class="reactions">
+                <span class="reaction">👍 0</span>
+                <span class="reaction">😂 0</span>
+                <span class="reaction">⭐ 0</span>
+            </div>
+            <button class="reply-btn">Reply</button>
+        </div>
+    `;
+
+    li.querySelector('.reply-btn').addEventListener('click', () => {
+        setReply(id, data.authorUuid, data.authorName, data.text, timestampFormatted);
+    });
+
+    messagesDiv.appendChild(li);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// ========== 7. Long Press (Mobile) ==========
+let longPressTimer;
+document.addEventListener('touchstart', (e) => {
+    const msgEl = e.target.closest('.message');
+    if (!msgEl) return;
+    longPressTimer = setTimeout(() => {
+        const msgId = msgEl.dataset.id;
+        const authorUuid = msgEl.dataset.authorUuid;
+        const authorName = msgEl.dataset.authorName;
+        const text = msgEl.dataset.text;
+        const timestamp = msgEl.dataset.timestamp;
+        window.replyTarget = { msgId, authorUuid, authorName, text, timestamp };
+        document.getElementById('action-sheet').style.display = 'flex';
+    }, 500);
+});
+
+document.addEventListener('touchend', () => clearTimeout(longPressTimer));
+document.addEventListener('touchcancel', () => clearTimeout(longPressTimer));
+
+document.getElementById('action-reply')?.addEventListener('click', () => {
+    const t = window.replyTarget;
+    if (t) setReply(t.msgId, t.authorUuid, t.authorName, t.text, t.timestamp);
+    document.getElementById('action-sheet').style.display = 'none';
+});
+document.getElementById('action-cancel')?.addEventListener('click', () => {
+    document.getElementById('action-sheet').style.display = 'none';
+});
+
+
+
+src/main/resources/static/js/videochat.js
+
+const strangerVideo = document.querySelector('.stranger-video');
+const myVideo = document.querySelector('.my-video');
+const nextBtn = document.getElementById('next-btn');
+const endBtn = document.getElementById('end-btn');
+const adDialog = document.getElementById('ad-dialog');
+const adTimer = document.getElementById('ad-timer');
+
+let localStream = null;
+let peerConnection = null;
+let stompClient = null;
+let mySessionId = null;
+let peerId = null;
+let isInitiator = false;
+
+// Buffer para candidatos ICE (resolves Problema 2)
+let iceCandidatesBuffer = [];
+let remoteDescriptionSet = false;
+
+// Evita múltiplas conexões (resolves Problema 1 e 4)
+let isAlreadyPaired = false;
+
+function showLoading(el, msg) {
+    el.innerHTML = `<div style="color:#777;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">${msg}</div>`;
+}
+
+async function startCamera() {
+    if (localStream) return;
+    try {
+        showLoading(myVideo, 'Acessando câmera...');
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const v = document.createElement('video');
+        v.srcObject = localStream;
+        v.autoplay = true;
+        v.muted = true;
+        v.playsInline = true;
+        v.style.width = '100%';
+        v.style.height = '100%';
+        v.style.objectFit = 'cover';
+        myVideo.innerHTML = '';
+        myVideo.appendChild(v);
+    } catch (e) {
+        myVideo.innerHTML = '<div style="color:#f44336;text-align:center;">Erro: câmera negada</div>';
+        console.error("Erro na câmera:", e);
+    }
+}
+
+function connectSignaling() {
+    showLoading(strangerVideo, 'Procurando usuário...');
+    const socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+    stompClient.debug = null;
+
+    stompClient.connect({}, () => {
+        stompClient.subscribe('/topic/welcome-ack', (msg) => {
+            // ✅ Só processa se ainda não tem ID
+            if (mySessionId) return;
+            mySessionId = msg.body;
+            console.log("Meu ID:", mySessionId);
+
+            stompClient.subscribe(`/topic/pair/${mySessionId}`, (p) => {
+                if (isAlreadyPaired) return;
+                isAlreadyPaired = true;
+
+                const data = JSON.parse(p.body);
+                peerId = data.peer;
+                isInitiator = data.initiator;
+                startWebRTC();
+            });
+
+            stompClient.subscribe(`/topic/signal/${mySessionId}`, (s) => {
+                const signal = JSON.parse(s.body);
+                if (signal.type === "peerLeft") {
+                    handlePeerLeft();
+                } else {
+                    handleSignal(signal);
+                }
+            });
+
+            stompClient.send("/app/video.join", {}, "");
+        });
+
+        stompClient.send("/app/get-session-id", {}, "");
+    });
+}
+
+function startWebRTC() {
+    showLoading(strangerVideo, isInitiator ? 'Conectando...' : 'Aguardando...');
+
+    peerConnection = new RTCPeerConnection({
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            {
+                urls: "turn:turn.ln.l.metered.live:80",
+                username: "lnl.metered.live",
+                credential: "PtjyCZeGO5cGSULwtXCw1qXx6-X-jch2pBf9oS-6L4k59vJi"
+            }
+        ]
+    });
+
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    // ✅ Anexa ao DOM ANTES de play() (resolves Problema 3)
+    peerConnection.ontrack = (e) => {
+        const v = document.createElement('video');
+        v.srcObject = e.streams[0];
+        v.autoplay = true;
+        v.playsInline = true;
+        v.style.width = '100%';
+        v.style.height = '100%';
+        v.style.objectFit = 'cover';
+
+        strangerVideo.innerHTML = ''; // Limpa primeiro
+        strangerVideo.appendChild(v); // Depois anexa
+
+        v.play().catch(err => console.warn("Autoplay bloqueado:", err));
+    };
+
+    peerConnection.onicecandidate = (e) => {
+        if (e.candidate) {
+            stompClient.send("/app/video.signal", {}, JSON.stringify({
+                type: "candidate",
+                data: e.candidate.toJSON()
+            }));
+        }
+    };
+
+    if (isInitiator) {
+        peerConnection.createOffer()
+            .then(offer => peerConnection.setLocalDescription(offer))
+            .then(() => {
+                stompClient.send("/app/video.signal", {}, JSON.stringify({
+                    type: "offer",
+                    data: peerConnection.localDescription.toJSON()
+                }));
+            });
+    }
+}
+
+// ✅ Buffer de ICE (resolves Problema 2)
+function handleSignal(signal) {
+    if (!peerConnection) return;
+
+    if (signal.type === "offer") {
+        peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data))
+            .then(() => {
+                remoteDescriptionSet = true;
+                processBufferedIceCandidates();
+                return peerConnection.createAnswer();
+            })
+            .then(answer => peerConnection.setLocalDescription(answer))
+            .then(() => {
+                stompClient.send("/app/video.signal", {}, JSON.stringify({
+                    type: "answer",
+                    data: peerConnection.localDescription.toJSON()
+                }));
+            });
+    } else if (signal.type === "answer") {
+        // ✅ Verifica estado antes de setar (resolves Problema 4)
+        if (peerConnection.signalingState === 'stable') {
+            console.warn("Ignorando answer duplicado");
+            return;
+        }
+        peerConnection.setRemoteDescription(new RTCSessionDescription(signal.data))
+            .then(() => {
+                remoteDescriptionSet = true;
+                processBufferedIceCandidates();
+            });
+    } else if (signal.type === "candidate") {
+        if (remoteDescriptionSet) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(signal.data));
+        } else {
+            iceCandidatesBuffer.push(signal.data);
+        }
+    }
+}
+
+function processBufferedIceCandidates() {
+    iceCandidatesBuffer.forEach(candidate => {
+        peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+    });
+    iceCandidatesBuffer = [];
+}
+
+function handlePeerLeft() {
+    hangUp();
+    showLoading(strangerVideo, 'O estranho saiu. Clique em NEXT.');
+}
+
+function hangUp() {
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    // ✅ Reseta tudo
+    mySessionId = null;
+    peerId = null;
+    isInitiator = false;
+    isAlreadyPaired = false;
+    iceCandidatesBuffer = [];
+    remoteDescriptionSet = false;
+    strangerVideo.innerHTML = '';
+}
+
+nextBtn.onclick = () => {
+    hangUp();
+    if (stompClient) {
+        stompClient.disconnect(); // ✅ Fecha conexão antiga
+        stompClient = null;
+    }
+
+    adDialog.style.display = 'flex';
+    let c = 3;
+    adTimer.textContent = c;
+    const iv = setInterval(() => {
+        c--;
+        adTimer.textContent = c;
+        if (c <= 0) {
+            clearInterval(iv);
+            adDialog.style.display = 'none';
+            connectSignaling(); // ✅ Nova conexão limpa
+        }
+    }, 1000);
+};
+
+endBtn.onclick = () => {
+    hangUp();
+    if (stompClient) stompClient.disconnect();
+    window.location.href = '/';
+};
+
+window.onload = async () => {
+    await startCamera();
+    connectSignaling();
+};

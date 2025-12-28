@@ -30,7 +30,7 @@ public class AdImpression {
     private boolean clicked;
 
     @Column(nullable = false)
-    private UUID sessioUUID;
+    private UUID sessionUUID;
 
     enum AdType {
         BANNER, VIDEO_INTER
