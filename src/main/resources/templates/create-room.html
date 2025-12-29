@@ -1,3 +1,4 @@
+<!-- src/main/resources/templates/create-room.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -6,6 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/css/create-room.css">
     <title>Criar Sala Q&A — Link&Live</title>
+    <!-- AdSense Global Script -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6377064826829777"
+        crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -14,7 +18,12 @@
         <h1>Criar Sala Q&A</h1>
         <p class="subtitle">Configure sua sala de perguntas e respostas</p>
 
-        <div class="intrusive-ad">ANÚNCIO — Área visível para avaliação</div>
+        <!-- Anúncio real do Google AdSense -->
+        <div class="intrusive-ad">
+            <ins class="adsbygoogle" style="display:block" data-ad-format="fluid" data-ad-layout-key="-fb+62+3f-do+by"
+                data-ad-client="ca-pub-6377064826829777" data-ad-slot="7853292401"></ins>
+            <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+        </div>
 
         <form method="POST" action="/room/create">
             <div th:if="${error}" class="error" th:text="${error}"></div>

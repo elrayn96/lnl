@@ -1,3 +1,4 @@
+<!-- src/main/resources/templates/videochat.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -6,17 +7,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Videochat — Link&Live</title>
     <link rel="stylesheet" href="/css/videochat.css">
+    <!-- Global AdSense Script -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6377064826829777"
+        crossorigin="anonymous"></script>
     <script src="/js/sockjs.min.js"></script>
     <script src="/js/stomp.min.js"></script>
 </head>
 
 <body>
-    <div class="ad-banner">Publicidade — Banner permanente durante videochat</div>
+    <!-- Top Banner (Permanente, permitido pelo AdSense) -->
+    <div class="ad-banner">
+        <ins class="adsbygoogle" style="display:block" data-ad-format="autorelaxed"
+            data-ad-client="ca-pub-6377064826829777" data-ad-slot="7086187402"></ins>
+        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+
     <div class="video-container">
         <div class="stranger-video">
             <!-- Vídeo do outro usuário -->
         </div>
-        <div class="my-video">  
+        <div class="my-video">
             <!-- Seu vídeo (PIP) -->
         </div>
         <button class="report-btn" title="Reportar usuário">
@@ -30,12 +40,15 @@
             <button class="btn btn-next" id="next-btn">NEXT</button>
         </div>
     </div>
+
+    <!-- Interstitial: SEM ANÚNCIO REAL (só contador) -->
     <div class="ad-dialog" id="ad-dialog" style="display: none;">
         <div class="ad-dialog-content">
             <h3>Publicidade</h3>
             <p>Aguarde <span id="ad-timer">3</span> segundos.</p>
         </div>
     </div>
+
     <script src="/js/videochat.js"></script>
 </body>
 

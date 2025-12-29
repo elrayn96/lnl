@@ -1,26 +1,44 @@
+<!-- src/main/resources/templates/join-room.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Entrar na Sala — Link&Live</title>
     <link rel="stylesheet" href="/css/join-room.css">
+    <!-- AdSense Global Script -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6377064826829777"
+        crossorigin="anonymous"></script>
 </head>
 
-<body><a href="/" class="back-link">← Voltar</a>
+<body>
+    <a href="/" class="back-link">← Voltar</a>
     <div class="container">
         <h1>Entrar na Sala</h1>
         <p class="subtitle">Cole o link da sala Q&A que você recebeu</p>
-        <div class="intrusive-ad">ANÚNCIO — Área para avaliação</div>
+
+        <!-- Anúncio real do Google AdSense -->
+        <div class="intrusive-ad">
+            <ins class="adsbygoogle" style="display:block" data-ad-format="fluid" data-ad-layout-key="-fb+62+3f-do+by"
+                data-ad-client="ca-pub-6377064826829777" data-ad-slot="7853292401"></ins>
+            <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+        </div>
+
         <form method="POST" action="/room/join">
             <div th:if="${error}" class="error" th:text="${error}"></div>
-            <div class="field"><label>Link da Sala</label>
-                <div class="input-container"><input type="text" name="roomLink" id="room-link" class="input"
-                        placeholder="https://linkandlive.app/room/abc123" required /><button type="button"
-                        class="paste-btn" id="paste-btn">Paste</button></div>
-            </div><button type="submit" class="btn">Entrar na Sala</button>
+            <div class="field">
+                <label>Link da Sala</label>
+                <div class="input-container">
+                    <input type="text" name="roomLink" id="room-link" class="input"
+                        placeholder="https://linkandlive.app/room/abc123" required />
+                    <button type="button" class="paste-btn" id="paste-btn">Paste</button>
+                </div>
+            </div>
+            <button type="submit" class="btn">Entrar na Sala</button>
         </form>
     </div>
     <script src="/js/join-room.js"></script>
 </body>
+
 </html>
