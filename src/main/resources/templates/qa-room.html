@@ -1,4 +1,3 @@
-<!-- src/main/resources/templates/home.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -7,89 +6,73 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title th:text="${room.title + ' — Link&Live'}">Sala Q&A — Link&Live</title>
   <link rel="stylesheet" href="/css/qa-room.css">
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6377064826829777"
-   crossorigin="anonymous"></script>
-  <!-- <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script> -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script> -->
-  <script src="/js/sockjs.min.js"></script>
-  <script src="/js/stomp.min.js"></script>
-
-  <link rel="stylesheet" href="/css/home.css" />
-  <title>Link&Live</title>
   <!-- Global AdSense Script -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6377064826829777"
     crossorigin="anonymous"></script>
+  <script src="/js/sockjs.min.js"></script>
+  <script src="/js/stomp.min.js"></script>
 </head>
 
 <body>
-  <div class="main-content">
-    <div class="logo">Link&Live</div>
-    <div class="hero">
-      <h1>Connect Through<br /><span>Q&A & Video</span></h1>
-      <p>Share questions anonymously or meet new people instantly</p>
+  <div class="header">
+    <a href="/">← VOLTAR</a>
+    <div>
+      <div class="room-title" th:text="${room.title}">Pergunte-me qualquer coisa...</div>
+      <div class="visitor-count" id="visitor-count">Carregando...</div>
     </div>
-    <div class="action-buttons">
-      <a href="/room/create" class="btn btn-primary">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M21 15C21 15.5523 20.5523 16 20 16H6L2 20V4C2 3.44772 2.44772 3 3 3H20C20.5523 3 21 3.44772 21 4V15Z"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        Criar Sala Q&A
-      </a>
-      <a href="/room/join" class="btn">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path
-            d="M15 7C15 8.10457 14.1046 9 13 9C11.8954 9 11 8.10457 11 7C11 5.89543 11.8954 5 13 5C14.1046 5 15 5.89543 15 7Z"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          <path
-            d="M18.5 11H17C16.4477 11 16 11.4477 16 12V19C16 19.5523 15.5523 20 15 20H9C8.44772 20 8 19.5523 8 19V12C8 11.4477 7.55228 11 7 11H5.5"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M7 8L5 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M17 8L19 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        Entrar via Link
-      </a>
-      <a href="/video-session/enter" class="btn btn-accent">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M23 7L16 12L23 17V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" />
-          <rect x="1" y="5" width="15" height="14" rx="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" />
-        </svg>
-        Videochat Aleatório
-      </a>
-    </div>
-    <div class="stats">
-      <div class="stat-item">
-        <div class="value">50K+</div>
-        <div class="label">Salas Criadas</div>
-      </div>
-      <div class="stat-item">
-        <div class="value">1M+</div>
-        <div class="label">Conversas</div>
-      </div>
-      <div class="stat-item">
-        <div class="value">24/7</div>
-        <div class="label">Online</div>
-      </div>
-    </div>
+    <button class="share-btn" id="share-btn">🔗</button>
   </div>
 
-  <!-- Sidebar Ad (Desktop Only) -->
-  <div class="sidebar-ad">
-    <ins class="adsbygoogle" style="display:block" data-ad-format="autorelaxed" data-ad-client="ca-pub-6377064826829777"
-      data-ad-slot="7086187402"></ins>
-    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+  <!-- Preview de Resposta -->
+  <div class="reply-preview" id="reply-preview" style="display: none;">
+    <span class="reply-to" id="reply-to-name">...</span>
+    <span class="reply-timestamp" id="reply-timestamp">...</span>
+    <div class="reply-snippet" id="reply-snippet">...</div>
+    <button class="reply-cancel" id="reply-cancel">×</button>
   </div>
 
-  <!-- Footer Banner (All Devices) -->
+  <div class="chat-container">
+    <div class="messages" id="messages">
+      <!-- Mensagens renderizadas via Thymeleaf + WebSocket -->
+      <div th:each="msg : ${allMessages}" th:data-id="${msg.id}" th:data-author-uuid="${msg.author.uuid}"
+        th:data-text="${msg.text}" th:data-timestamp="${#temporals.format(msg.createdAt, 'HH:mm')}"
+        th:data-author-name="${msg.author.username}"
+        th:class="${msg.author.uuid.toString() == visitorUuid ? 'message right' : 'message left'}">
+        <div class="avatar" th:text="${#strings.substring(msg.author.username, 0, 2)}">A</div>
+        <div class="message-content-wrap">
+          <div class="message-bubble" th:utext="${#strings.escapeXml(msg.text)}">...</div>
+          <div class="reactions">
+            <span class="reaction">👍 <span th:text="${msg.upvotes}">0</span></span>
+            <span class="reaction">😂 0</span>
+            <span class="reaction">⭐ 0</span>
+          </div>
+          <button class="reply-btn">Reply</button>
+        </div>
+      </div>
+    </div>
+    <form id="messageForm" class="input-area">
+      <input type="hidden" id="replyToMessageId" />
+      <input type="text" id="messageInput" class="message-input" placeholder="Digite sua pergunta ou resposta..."
+        required />
+      <button type="submit" class="send-btn">➤</button>
+    </form>
+  </div>
+
+  <!-- Footer Banner -->
   <div class="ad-banner">
     <ins class="adsbygoogle" style="display:block" data-ad-format="autorelaxed" data-ad-client="ca-pub-6377064826829777"
       data-ad-slot="7086187402"></ins>
     <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
   </div>
 
-  <script src="/js/home.js"></script>
+  <!-- Action Sheet Mobile -->
+  <div id="action-sheet" class="action-sheet" style="display: none;">
+    <div class="action-sheet-content">
+      <button id="action-reply" class="action-btn">Responder</button>
+      <button id="action-cancel" class="action-btn cancel">Cancelar</button>
+    </div>
+  </div>
+  <script src="/js/qa-room.js"></script>
 </body>
 
 </html>
