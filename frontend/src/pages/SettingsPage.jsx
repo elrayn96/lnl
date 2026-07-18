@@ -1,0 +1,3 @@
+import { Moon, ShieldCheck, Volume2 } from 'lucide-react'
+import GlassCard from '../components/common/GlassCard'
+export default function SettingsPage() { return <div className="page narrow-page"><div className="page-heading"><span className="eyebrow">PREFERÊNCIAS</span><h1>Definições</h1></div><GlassCard className="settings-list"><div><Moon /><span><b>Tema escuro</b><small>Optimizado para ambientes com pouca luz</small></span><input type="checkbox" checked readOnly /></div><div><Volume2 /><span><b>Sons da aplicação</b><small>Avisos discretos de ligação</small></span><input type="checkbox" defaultChecked /></div><div><ShieldCheck /><span><b>Privacidade</b><small>Chamadas nunca são gravadas</small></span></div></GlassCard></div> }
