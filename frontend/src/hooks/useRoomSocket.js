@@ -32,7 +32,7 @@ export function useRoomSocket(roomUuid, user, onMessage) {
     client.activate()
     return () => {
       active = false
-      subscription?.unsubscribe()
+      try { subscription?.unsubscribe() } catch { /* Socket may already be closed. */ }
       if (clientRef.current === client) clientRef.current = null
       client.deactivate({ force: true })
     }
