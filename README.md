@@ -45,9 +45,10 @@ O repositório inclui um Blueprint em `render.yaml` e um Dockerfile multi-stage.
 3. Ligue o repositório e seleccione o `render.yaml`.
 4. Confirme os recursos e clique em **Apply**.
 
-O Blueprint cria o PostgreSQL e um único serviço web. Durante o deploy, o
-Dockerfile compila o React, empacota o Spring Boot e inicia a aplicação na porta
-fornecida pelo Render. Não crie um Static Site separado.
+O Blueprint cria apenas um serviço web e não cria bases de dados. Durante o
+deploy, o Dockerfile compila o React e empacota o Spring Boot. A aplicação usa a
+base de dados já configurada no `application.properties`. Não crie um Static
+Site separado.
 
 No plano gratuito, o primeiro acesso depois de algum tempo sem tráfego pode ser
 mais lento devido ao cold start do Render.
