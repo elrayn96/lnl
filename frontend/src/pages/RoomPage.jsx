@@ -19,9 +19,21 @@ export default function RoomPage() {
   const endRef = useRef(null)
   const toast = useToast()
   useEffect(() => { Promise.all([roomApi.get(uuid), roomApi.initUser()]).then(([r,u]) => { setRoom(r); setMessages(r.messages); setUser(u) }).catch(setError) }, [uuid])
-  const { status, send } = useRoomSocket(uuid, user, (message) => setMessages((items) => items.some((x) => x.id === message.id && x.type === message.type) ? items : [...items, message]))
+  const addMessage = (message) => setMessages((items) => items.some((x) => x.id === message.id && x.type === message.type) ? items : [...items, message])
+  const { status } = useRoomSocket(uuid, user, addMessage)
   useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages])
-  const submit = (text) => { try { send(text, reply?.type === 'question' ? reply.id : reply?.inReplyTo); setReply(null) } catch (e) { toast.show(e.message, 'error') } }
+  const submit = async (text) => {
+    try {
+      const message = await roomApi.sendMessage(uuid, {
+        text,
+        inReplyTo: reply?.type === 'question' ? reply.id : reply?.inReplyTo || null,
+      })
+      addMessage(message)
+      setReply(null)
+    } catch (e) {
+      toast.show(e.message, 'error')
+    }
+  }
   const share = async () => { const url = location.href; if (navigator.share) await navigator.share({ title: room.title, url }); else { await navigator.clipboard.writeText(url); toast.show('Link copiado.') } }
   if (error) return <div className="page"><StateView tone="error" title="Sala indisponível" message={error.status === 410 ? 'Esta sala já expirou.' : 'Não encontrámos esta sala.'} action={<Link className="button button--soft" to="/rooms">Voltar às salas</Link>} /></div>
   if (!room || !user) return <LoadingState label="A abrir a sala…" />
@@ -33,6 +45,6 @@ export default function RoomPage() {
       {messages.length === 0 ? <StateView title="Ainda está tudo em silêncio" message="Sê a primeira pessoa a deixar uma pergunta." /> : messages.map((message) => <ChatMessage key={`${message.type}-${message.id}`} message={message} mine={message.authorUuid === user.uuid} onReply={setReply} />)}
       <div ref={endRef} />
     </section>
-    <ChatComposer onSend={submit} disabled={status !== 'connected'} reply={reply} onCancelReply={() => setReply(null)} />
+    <ChatComposer onSend={submit} disabled={!room || !user} reply={reply} onCancelReply={() => setReply(null)} />
   </div>
 }

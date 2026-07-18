@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,11 +45,15 @@ public class FrontendApiController {
     private final AvatarService avatarService;
     private final QuestionService questionService;
     private final AnswerService answerService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping("/users/anonymous")
     public Map<String, Object> anonymousUser(HttpSession session) {
-        AppUser user = getOrCreateVisitor(session);
-        return Map.of("uuid", user.getUuid().toString(), "username", user.getUsername());
+        AppUser user = getSessionUser(session);
+        return Map.of(
+                "uuid", user.getUuid().toString(),
+                "username", user.getUsername(),
+                "isOwner", session.getAttribute("currentUser") == user);
     }
 
     @GetMapping("/video/session")
@@ -137,6 +142,57 @@ public class FrontendApiController {
         return ResponseEntity.ok(result);
     }
 
+    @PostMapping("/rooms/{uuid}/messages")
+    public ResponseEntity<?> sendRoomMessage(@PathVariable UUID uuid, @RequestBody MessageRequest body,
+            HttpSession session) {
+        Optional<Room> optional = roomService.findByUuid(uuid);
+        if (optional.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Sala não encontrada."));
+        }
+        Room room = optional.get();
+        if (Instant.now().isAfter(room.getExpiresAt())) {
+            return ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Esta sala expirou."));
+        }
+        String text = body.text() == null ? "" : body.text().trim();
+        if (text.isEmpty() || text.length() > 600) {
+            return ResponseEntity.badRequest().body(Map.of("message", "A mensagem deve ter entre 1 e 600 caracteres."));
+        }
+
+        AppUser author = getSessionUser(session);
+        Map<String, Object> message;
+        if (body.inReplyTo() != null) {
+            Optional<Question> question = questionService.findById(body.inReplyTo());
+            if (question.isEmpty() || !question.get().getRoom().getUuid().equals(uuid)) {
+                return ResponseEntity.badRequest().body(Map.of("message", "A pergunta respondida não pertence a esta sala."));
+            }
+            Answer answer = new Answer();
+            answer.setQuestion(question.get());
+            answer.setAuthor(author);
+            answer.setText(text);
+            answer.setCreatedAt(Instant.now());
+            answer.setPublished(true);
+            answer = answerService.save(answer);
+            message = baseMessage(answer.getId(), "answer", author, text, answer.getCreatedAt());
+            message.put("inReplyTo", question.get().getId());
+            message.put("originalAuthorName", question.get().getAuthor().getUsername());
+            message.put("originalMessageSnippet", question.get().getText());
+        } else {
+            Question question = new Question();
+            question.setRoom(room);
+            question.setAuthor(author);
+            question.setText(text);
+            question.setCreatedAt(Instant.now());
+            question.setUpvotes(0);
+            question.setPrivate(false);
+            question.setStatus(Question.Status.PUBLISHED);
+            question = questionService.save(question);
+            message = baseMessage(question.getId(), "question", author, text, question.getCreatedAt());
+            message.put("upvotes", 0);
+        }
+        messagingTemplate.convertAndSend("/topic/room/" + uuid + "/messages", message);
+        return ResponseEntity.status(HttpStatus.CREATED).body(message);
+    }
+
     @PostMapping("/reports")
     public ResponseEntity<?> report(@RequestBody Map<String, String> body, HttpSession session) {
         String reason = body.get("reason");
@@ -175,6 +231,15 @@ public class FrontendApiController {
         return visitor;
     }
 
+    private AppUser getSessionUser(HttpSession session) {
+        AppUser owner = (AppUser) session.getAttribute("currentUser");
+        if (owner != null) {
+            session.setAttribute("visitorUser", owner);
+            return owner;
+        }
+        return getOrCreateVisitor(session);
+    }
+
     private AppUser createUser(String username) {
         List<Avatar> avatars = avatarService.findAll();
         AppUser user = new AppUser();
@@ -189,4 +254,5 @@ public class FrontendApiController {
     }
 
     public record CreateRoomRequest(String title, String description, String duration, String mode, Boolean isPublic) {}
+    public record MessageRequest(String text, Long inReplyTo) {}
 }
