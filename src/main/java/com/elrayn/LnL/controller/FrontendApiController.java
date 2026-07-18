@@ -61,10 +61,26 @@ public class FrontendApiController {
         AppUser user = getOrCreateVisitor(session);
         UUID sessionUuid = UUID.randomUUID();
         session.setAttribute("videoSessionUUID", sessionUuid);
-        return Map.of(
-                "userId", user.getUuid().toString(),
-                "userName", user.getUsername(),
-                "sessionUUID", sessionUuid.toString());
+        List<Map<String, Object>> iceServers = new ArrayList<>();
+        iceServers.add(Map.of("urls", "stun:stun.l.google.com:19302"));
+        String turnUrl = System.getenv("TURN_URL");
+        String turnUsername = System.getenv("TURN_USERNAME");
+        String turnCredential = System.getenv("TURN_CREDENTIAL");
+        if (turnUrl != null && !turnUrl.isBlank()
+                && turnUsername != null && !turnUsername.isBlank()
+                && turnCredential != null && !turnCredential.isBlank()) {
+            iceServers.add(Map.of(
+                    "urls", turnUrl,
+                    "username", turnUsername,
+                    "credential", turnCredential));
+        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("userId", user.getUuid().toString());
+        response.put("userName", user.getUsername());
+        response.put("sessionUUID", sessionUuid.toString());
+        response.put("iceServers", iceServers);
+        response.put("turnConfigured", iceServers.size() > 1);
+        return response;
     }
 
     @PostMapping("/rooms")

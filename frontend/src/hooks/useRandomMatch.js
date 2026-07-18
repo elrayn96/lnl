@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createStompClient } from '../services/websocketService'
 
-const iceServers = [
+const defaultIceServers = [
   { urls: 'stun:stun.l.google.com:19302' },
-  ...(import.meta.env.VITE_TURN_URL ? [{ urls: import.meta.env.VITE_TURN_URL, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }] : []),
 ]
 
-export function useRandomMatch(localStream) {
+export function useRandomMatch(localStream, configuredIceServers) {
   const stompRef = useRef(null)
   const peerRef = useRef(null)
   const candidatesRef = useRef([])
   const remoteReadyRef = useRef(false)
   const [remoteStream, setRemoteStream] = useState(null)
   const [status, setStatus] = useState('idle')
+  const iceServers = configuredIceServers?.length ? configuredIceServers : defaultIceServers
 
   const closePeer = useCallback(() => {
     peerRef.current?.close()
@@ -44,7 +44,7 @@ export function useRandomMatch(localStream) {
       await peer.setLocalDescription(offer)
       sendSignal({ type: 'offer', data: peer.localDescription.toJSON() })
     }
-  }, [closePeer, localStream])
+  }, [closePeer, localStream, configuredIceServers])
   const handleSignal = useCallback(async (signal) => {
     if (signal.type === 'peerLeft') { closePeer(); setStatus('peer-left'); return }
     const peer = peerRef.current
@@ -79,10 +79,12 @@ export function useRandomMatch(localStream) {
           client.subscribe(`/topic/signal/${id}`, (frame) => handleSignal(JSON.parse(frame.body)).catch(() => setStatus('failed')))
           client.publish({ destination: '/app/video.join', body: '' })
         })
-        client.publish({
-          destination: '/app/video.register',
-          body: JSON.stringify({ clientToken }),
-        })
+        window.setTimeout(() => {
+          client.publish({
+            destination: '/app/video.register',
+            body: JSON.stringify({ clientToken }),
+          })
+        }, 100)
       },
       onDisconnect: () => setStatus((s) => s === 'idle' ? s : 'reconnecting'),
       onError: () => setStatus('failed'),

@@ -2,7 +2,6 @@ import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import crypto from 'node:crypto'
 
-globalThis.crypto = crypto.webcrypto
 const base = process.argv[2] || 'http://localhost:8092'
 
 function connectClient(name) {
@@ -23,10 +22,12 @@ function connectClient(name) {
           })
           client.publish({ destination: '/app/video.join', body: '' })
         })
-        client.publish({
-          destination: '/app/video.register',
-          body: JSON.stringify({ clientToken: token }),
-        })
+        setTimeout(() => {
+          client.publish({
+            destination: '/app/video.register',
+            body: JSON.stringify({ clientToken: token }),
+          })
+        }, 100)
       },
     })
     client.activate()

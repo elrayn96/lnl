@@ -27,7 +27,7 @@ export default function VideoChatPage() {
   const [report, setReport] = useState(false)
   const [mediaRequested, setMediaRequested] = useState(false)
   const media = useMediaDevices()
-  const match = useRandomMatch(media.stream)
+  const match = useRandomMatch(media.stream, session?.iceServers)
   const navigate = useNavigate()
   const toast = useToast()
 
@@ -92,6 +92,7 @@ export default function VideoChatPage() {
       <span className={`connection-pill connection-pill--${match.status}`}><i /> {match.status === 'connected' ? 'Ligado' : labels[match.status] || 'A preparar…'}</span>
       <span className="safety"><ShieldAlert /> Conversa não gravada</span>
     </div>
+    {session && !session.turnConfigured && <div className="socket-status">TURN não configurado: ligações entre algumas redes móveis podem falhar.</div>}
     <section className="video-stage">
       {match.remoteStream
         ? <video ref={remoteVideo} autoPlay playsInline className="remote-video" />

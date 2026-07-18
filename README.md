@@ -50,6 +50,11 @@ deploy, o Dockerfile compila o React e empacota o Spring Boot. A aplicação usa
 base de dados já configurada no `application.properties`. Não crie um Static
 Site separado.
 
+Para que o vídeo funcione entre dispositivos em redes diferentes, preencha no
+Render as variáveis secretas solicitadas pelo Blueprint: `TURN_URL`,
+`TURN_USERNAME` e `TURN_CREDENTIAL`. Sem TURN, redes com NAT restritivo podem
+impedir a ligação mesmo quando o matchmaking funciona.
+
 No plano gratuito, o primeiro acesso depois de algum tempo sem tráfego pode ser
 mais lento devido ao cold start do Render.
 
