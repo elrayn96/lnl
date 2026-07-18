@@ -7,14 +7,31 @@ sessões anónimas, persistência, salas, WebSocket/STOMP, sinalização WebRTC 
 
 Pré-requisitos: Java 17+, Node.js 20+ e PostgreSQL configurado.
 
-1. Inicie o backend:
-   `./mvnw spring-boot:run` (Windows: `mvnw.cmd spring-boot:run`)
-2. Noutro terminal:
-   `cd frontend`
-3. Instale e inicie:
-   `npm install`
-   `npm run dev`
-4. Abra `http://localhost:5173`.
+No PowerShell, configure a base de dados existente para a sessão actual:
+
+```powershell
+$env:DB_HOST="host-da-base"
+$env:DB_PORT="5432"
+$env:DB_NAME="nome-da-base"
+$env:DB_USER="utilizador"
+$env:DB_PASSWORD="palavra-passe"
+```
+
+Inicie o backend:
+
+```powershell
+.\mvnw.cmd spring-boot:run
+```
+
+Noutro terminal:
+
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run dev
+```
+
+Abra `http://localhost:5173`. O backend fica em `http://localhost:8080`.
 
 O Vite encaminha `/api` e `/ws` para `http://localhost:8080` e envia cookies de
 sessão. Para outro backend, defina `VITE_API_BASE_URL`.
