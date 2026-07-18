@@ -20,7 +20,7 @@ export default function RoomPage() {
   const toast = useToast()
   useEffect(() => { Promise.all([roomApi.get(uuid), roomApi.initUser()]).then(([r,u]) => { setRoom(r); setMessages(r.messages); setUser(u) }).catch(setError) }, [uuid])
   const addMessage = (message) => setMessages((items) => items.some((x) => x.id === message.id && x.type === message.type) ? items : [...items, message])
-  const { status } = useRoomSocket(uuid, user, addMessage)
+  const { status, send } = useRoomSocket(uuid, user, addMessage)
   useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages])
   const submit = async (text) => {
     try {
@@ -31,7 +31,14 @@ export default function RoomPage() {
       addMessage(message)
       setReply(null)
     } catch (e) {
-      toast.show(e.message, 'error')
+      if ((e.status === 404 || e.status === 405) && status === 'connected') {
+        try {
+          send(text, reply?.type === 'question' ? reply.id : reply?.inReplyTo)
+          setReply(null)
+          return
+        } catch { /* Show the HTTP error below. */ }
+      }
+      toast.show(e.message || 'Não foi possível enviar a mensagem.', 'error')
     }
   }
   const share = async () => { const url = location.href; if (navigator.share) await navigator.share({ title: room.title, url }); else { await navigator.clipboard.writeText(url); toast.show('Link copiado.') } }
