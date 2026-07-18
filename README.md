@@ -19,7 +19,23 @@ Pré-requisitos: Java 17+, Node.js 20+ e PostgreSQL configurado.
 O Vite encaminha `/api` e `/ws` para `http://localhost:8080` e envia cookies de
 sessão. Para outro backend, defina `VITE_API_BASE_URL`.
 
-## Produção
+## Deploy no Render
+
+O repositório inclui um Blueprint em `render.yaml` e um Dockerfile multi-stage.
+
+1. Envie o repositório para GitHub, GitLab ou Bitbucket.
+2. No Render escolha **New → Blueprint**.
+3. Ligue o repositório e seleccione o `render.yaml`.
+4. Confirme os recursos e clique em **Apply**.
+
+O Blueprint cria o PostgreSQL e um único serviço web. Durante o deploy, o
+Dockerfile compila o React, empacota o Spring Boot e inicia a aplicação na porta
+fornecida pelo Render. Não crie um Static Site separado.
+
+No plano gratuito, o primeiro acesso depois de algum tempo sem tráfego pode ser
+mais lento devido ao cold start do Render.
+
+## Produção manual
 
 Execute `cd frontend && npm ci && npm run build`. O resultado é colocado em
 `src/main/resources/static/app`. Depois execute `mvnw.cmd clean package` e inicie
