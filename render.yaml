@@ -1,0 +1,36 @@
+databases:
+  - name: linklive-db
+    plan: free
+    databaseName: linklive
+    user: linklive
+
+services:
+  - type: web
+    name: linklive
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: DB_HOST
+        fromDatabase:
+          name: linklive-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: linklive-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: linklive-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: linklive-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: linklive-db
+          property: password
+      - key: JAVA_OPTS
+        value: -XX:MaxRAMPercentage=75 -XX:+UseSerialGC

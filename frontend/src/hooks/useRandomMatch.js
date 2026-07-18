@@ -65,10 +65,12 @@ export function useRandomMatch(localStream) {
   const connect = useCallback(() => {
     if (!localStream || stompRef.current) return
     setStatus('searching')
+    const clientToken = crypto.randomUUID()
     const client = createStompClient({
       onConnect: () => {
-        client.subscribe('/topic/welcome-ack', (message) => {
-          const id = message.body
+        const registration = client.subscribe(`/topic/video/register/${clientToken}`, (message) => {
+          registration.unsubscribe()
+          const id = JSON.parse(message.body).sessionId
           client.subscribe(`/topic/pair/${id}`, async (frame) => {
             setStatus('connecting')
             const pair = JSON.parse(frame.body)
@@ -77,7 +79,10 @@ export function useRandomMatch(localStream) {
           client.subscribe(`/topic/signal/${id}`, (frame) => handleSignal(JSON.parse(frame.body)).catch(() => setStatus('failed')))
           client.publish({ destination: '/app/video.join', body: '' })
         })
-        client.publish({ destination: '/app/get-session-id', body: '' })
+        client.publish({
+          destination: '/app/video.register',
+          body: JSON.stringify({ clientToken }),
+        })
       },
       onDisconnect: () => setStatus((s) => s === 'idle' ? s : 'reconnecting'),
       onError: () => setStatus('failed'),

@@ -46,6 +46,19 @@ public class SignalingController {
         tryPair();
     }
 
+    @MessageMapping("/video.register")
+    public void register(Map<String, Object> payload, @Header("simpSessionId") String sessionId) {
+        Object token = payload.get("clientToken");
+        if (sessionId == null || token == null) {
+            return;
+        }
+        String safeToken = token.toString().replaceAll("[^a-zA-Z0-9-]", "");
+        if (!safeToken.isBlank()) {
+            messagingTemplate.convertAndSend("/topic/video/register/" + safeToken,
+                    Map.of("sessionId", sessionId));
+        }
+    }
+
     private synchronized void tryPair() {
         while (waiting.size() >= 2) {
             String a = waiting.poll();

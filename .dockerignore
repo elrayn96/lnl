@@ -1,0 +1,10 @@
+.git
+.idea
+.vscode
+target
+frontend/node_modules
+src/main/resources/static/app
+*.log
+prompt.txt
+interfaces.pdf
+keystore.p12
