@@ -1,0 +1,6 @@
+import{c as e,j as s}from"./index-DrY5hv2f.js";import{G as a}from"./GlassCard-CFR3mm6U.js";import{V as i}from"./volume-2-DASCCQ3C.js";import{S as r}from"./shield-check-CoSqAmke.js";/**
+ * @license lucide-react v0.468.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const c=e("Moon",[["path",{d:"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z",key:"a7tn18"}]]);function t(){return s.jsxs("div",{className:"page narrow-page",children:[s.jsxs("div",{className:"page-heading",children:[s.jsx("span",{className:"eyebrow",children:"PREFERÊNCIAS"}),s.jsx("h1",{children:"Definições"})]}),s.jsxs(a,{className:"settings-list",children:[s.jsxs("div",{children:[s.jsx(c,{}),s.jsxs("span",{children:[s.jsx("b",{children:"Tema escuro"}),s.jsx("small",{children:"Optimizado para ambientes com pouca luz"})]}),s.jsx("input",{type:"checkbox",checked:!0,readOnly:!0})]}),s.jsxs("div",{children:[s.jsx(i,{}),s.jsxs("span",{children:[s.jsx("b",{children:"Sons da aplicação"}),s.jsx("small",{children:"Avisos discretos de ligação"})]}),s.jsx("input",{type:"checkbox",defaultChecked:!0})]}),s.jsxs("div",{children:[s.jsx(r,{}),s.jsxs("span",{children:[s.jsx("b",{children:"Privacidade"}),s.jsx("small",{children:"Chamadas nunca são gravadas"})]})]})]})]})}export{t as default};

@@ -5,8 +5,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
 public class HomeController {   
-    @GetMapping("/")
+    @GetMapping({"/", "/rooms", "/rooms/create", "/rooms/join", "/rooms/{uuid}",
+            "/video", "/activity", "/settings"})
     public String home() {
-        return "home";
+        return "forward:/app/index.html";
     }
 }
