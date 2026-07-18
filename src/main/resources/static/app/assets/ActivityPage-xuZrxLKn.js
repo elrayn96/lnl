@@ -1,1 +1,0 @@
-import{j as e,H as a}from"./index-3PBPqpo7.js";import{S as s}from"./StateView-CaBGJ9oa.js";function r(){return e.jsx("div",{className:"page",children:e.jsx(s,{title:"Ainda sem actividade",message:"As salas e conversas recentes aparecerão aqui quando houver dados disponíveis.",action:e.jsx(a,{"aria-hidden":"true"})})})}export{r as default};
