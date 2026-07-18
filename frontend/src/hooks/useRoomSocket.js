@@ -9,17 +9,33 @@ export function useRoomSocket(roomUuid, user, onMessage) {
 
   useEffect(() => {
     if (!roomUuid || !user) return
+    let active = true
+    let subscription
     const client = createStompClient({
       onConnect: () => {
+        if (!active || clientRef.current !== client) return
         setStatus('connected')
-        client.subscribe(`/topic/room/${roomUuid}/messages`, (frame) => callbackRef.current(JSON.parse(frame.body)))
+        subscription = client.subscribe(`/topic/room/${roomUuid}/messages`, (frame) => {
+          if (!active) return
+          try { callbackRef.current(JSON.parse(frame.body)) } catch { setStatus('disconnected') }
+        })
       },
-      onDisconnect: () => setStatus('reconnecting'),
-      onError: () => setStatus('disconnected'),
+      onDisconnect: () => {
+        if (active && clientRef.current === client) setStatus('reconnecting')
+      },
+      onError: () => {
+        if (active && clientRef.current === client) setStatus('disconnected')
+      },
     })
+    client.connectionTimeout = 10000
     clientRef.current = client
     client.activate()
-    return () => { client.deactivate(); clientRef.current = null }
+    return () => {
+      active = false
+      subscription?.unsubscribe()
+      if (clientRef.current === client) clientRef.current = null
+      client.deactivate({ force: true })
+    }
   }, [roomUuid, user])
 
   const send = useCallback((text, inReplyTo) => {

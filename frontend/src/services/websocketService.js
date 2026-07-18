@@ -9,6 +9,7 @@ export function createStompClient({ onConnect, onDisconnect, onError }) {
     heartbeatOutgoing: 10000,
     onConnect,
     onWebSocketClose: onDisconnect,
+    onWebSocketError: onError,
     onStompError: onError,
     debug: import.meta.env.DEV ? () => {} : undefined,
   })
